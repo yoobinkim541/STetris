@@ -320,6 +320,26 @@ class RaidEngineTest {
         return builder.toString();
     }
 
+    @Test
+    void 레이드_블록도_7bag으로_나온다() {
+        // 첫 주머니(1~7번째) 안의 2~7번째 6개는 모두 달라야 한다. 독립 추첨이면 시드마다 약 4%만 통과한다
+        for (long seed = 0; seed < 20; seed++) {
+            Harness harness = Harness.solo(seed);
+            harness.ready();
+            java.util.Set<Integer> kinds = new java.util.HashSet<>();
+            for (int piece = 2; piece <= 7; piece++) {
+                kinds.add(kind(harness.engine.snapshot().players().get(0).board().next()));
+                if (piece < 7) harness.drop(0);
+            }
+            assertEquals(6, kinds.size(), "seed " + seed);
+        }
+    }
+
+    private static int kind(int[][] next) {
+        for (int[] row : next) for (int v : row) if (v != 0) return v;
+        throw new AssertionError("next block is empty");
+    }
+
     private static Harness killOne(long seed) throws Exception {
         Harness harness = Harness.solo(seed, (boss, level, previous, before, random) -> PatternId.SEAL_PREVIEW);
         harness.ready();

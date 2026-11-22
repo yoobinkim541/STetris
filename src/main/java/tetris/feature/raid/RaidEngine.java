@@ -27,7 +27,7 @@ import tetris.feature.raid.api.RaidPhase;
 import tetris.feature.raid.api.RaidSnapshot;
 import tetris.feature.rule.BlockGenerator;
 import tetris.feature.rule.TSpinType;
-import tetris.feature.rule.WeightedBlockGenerator;
+import tetris.feature.rule.BagBlockGenerator;
 import tetris.feature.setting.AutoRepeat;
 import tetris.feature.setting.GameAction;
 import tetris.feature.versus.DueTimeClock;
@@ -134,7 +134,7 @@ public final class RaidEngine {
             int index = i;
             DueTimeClock due = new DueTimeClock(() -> wall);
             BlockGenerator generator = generators == null
-                    ? new WeightedBlockGenerator(Difficulty.NORMAL.weights(), new Random(pieceSeeds[i]))
+                    ? new BagBlockGenerator(Difficulty.NORMAL.weights(), new Random(pieceSeeds[i]))
                     : Objects.requireNonNull(generators.apply(i), "generator");
             GameSession session = new GameSession(GameMode.CLASSIC, Difficulty.NORMAL, generator, due, quiet(),
                     boundary(index), config.controlStyle());
