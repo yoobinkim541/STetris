@@ -661,28 +661,14 @@ public class GamePanel extends JPanel implements GameListener {
     private void drawGhost(Graphics2D g, Block ghost, int originX, int originY) {
         if (ghost == null) return;
         int[][] shape = ghost.getShape();
-        Stroke previous = g.getStroke();
-        if (!colorBlindMode) {
-            float dash = Math.max(2f, cellSize / 4f);
-            g.setStroke(new BasicStroke(Math.max(1.5f, cellSize / 8f), BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
-                    1f, new float[] {dash, dash}, 0f));
-            g.setColor(UiKit.CYAN);
-        }
         for (int r = 0; r < shape.length; r++) {
             for (int c = 0; c < shape[r].length; c++) {
                 int row = ghost.getRow() + r;
                 if (shape[r][c] == 0 || row < 0) continue;
-                int x = originX + (ghost.getCol() + c) * cellSize;
-                int y = originY + row * cellSize;
-                if (colorBlindMode) {
-                    tetris.ui.fx.A11yColors.paintGhostCell(g, x, y, cellSize, true);
-                } else {
-                    int inset = Math.max(2, cellSize / 8);
-                    g.drawRect(x + inset, y + inset, Math.max(1, cellSize - inset * 2 - 1), Math.max(1, cellSize - inset * 2 - 1));
-                }
+                tetris.ui.theme.BlockCells.paintGhost(g, originX + (ghost.getCol() + c) * cellSize,
+                        originY + row * cellSize, cellSize, colorBlindMode);
             }
         }
-        g.setStroke(previous);
     }
 
     /** 떨어지는 조각 아래 빛기둥. 칸 가운데만 칠해 감사 픽셀을 피한다 */
@@ -696,20 +682,13 @@ public class GamePanel extends JPanel implements GameListener {
         }
         int ghostTop = ghost.getRow();
         if (ghostTop <= bottomRow) return;
-        Composite previous = g.getComposite();
-        g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.28f));
-        g.setColor(UiKit.CYAN);
-        int beam = Math.max(2, cellSize / 5);
         for (int c = 0; c < shape[0].length; c++) {
             boolean used = false;
             for (int r = 0; r < shape.length; r++) if (shape[r][c] != 0) used = true;
             if (!used) continue;
-            int cx = originX + (current.getCol() + c) * cellSize + (cellSize - beam) / 2;
-            int y0 = originY + (bottomRow + 1) * cellSize;
-            int y1 = originY + ghostTop * cellSize;
-            if (y1 > y0) g.fillRect(cx, y0, beam, y1 - y0);
+            tetris.ui.theme.BlockCells.paintBeam(g, originX + (current.getCol() + c) * cellSize,
+                    originY + (bottomRow + 1) * cellSize, originY + ghostTop * cellSize, cellSize);
         }
-        g.setComposite(previous);
     }
 
     private int drawHold(Graphics2D g, Block hold, int x, int y, int width, int labelSize) {
@@ -729,13 +708,9 @@ public class GamePanel extends JPanel implements GameListener {
 
     private void drawCell(Graphics2D g, int x, int y, int size, BlockType type, tetris.feature.item.ItemType item) {
         Color color = item == null ? palette.color(type, colorBlindMode) : Color.WHITE;
-        tetris.ui.theme.GemTiles.paint(g, x, y, size, color);
-
-        if (size < 8) return;
-        g.setFont(Theme.blockLetter(Math.max(8, size * 3 / 5)));
-        g.setColor(item == null ? palette.textColor(color) : Color.BLACK);
         String letter = item != null ? String.valueOf(item.symbol()) : String.valueOf(type.letter());
-        UiKit.drawInBox(g, letter, new Rectangle(x, y, size, size), UiKit.Align.CENTER);
+        tetris.ui.theme.BlockCells.paintBlock(g, x, y, size, color, letter,
+                item == null ? palette.textColor(color) : Color.BLACK);
     }
 
     private static int drawLabel(Graphics2D g, String label, int x, int y, int size) {

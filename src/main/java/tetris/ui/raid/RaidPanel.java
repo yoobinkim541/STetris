@@ -97,7 +97,7 @@ public final class RaidPanel extends JPanel {
 
     public RaidPanel(boolean colorBlind) {
         this.colorBlind = colorBlind;
-        boards = new BoardRenderer(colorBlind);
+        boards = new BoardRenderer(colorBlind, true); // 블록·착지 표시는 클래식 게임 화면과 같게
         fx.setColorBlind(colorBlind);
         setOpaque(true);
         setBackground(new Color(0x07091A));
@@ -745,7 +745,7 @@ public final class RaidPanel extends JPanel {
             Graphics2D layer = cached.createGraphics();
             try {
                 boards.paintPlayfield(layer, board.cells(), board.items(), 0, 0, scene.cell);
-                boards.paintGhost(layer, board.ghost(), 0, 0, scene.cell);
+                boards.paintLanding(layer, board.cells(), board.ghost(), 0, 0, scene.cell);
             } finally {
                 layer.dispose();
             }
@@ -868,10 +868,11 @@ public final class RaidPanel extends JPanel {
     private void paintPreviewPiece(Graphics2D g, int[][] shape, Rectangle slot) {
         if (shape == null || slot.width <= 2 || slot.height <= 2) return;
         int inset = 2;
+        // 클래식 게임 화면처럼 홀드·다음 블록도 보드 칸 크기를 넘지 않게 그린다 (칸에 꽉 차게 키우지 않음)
         PieceFit fit = PieceFit.of(shape, slot.x + inset, slot.y + inset,
-                Math.max(1, slot.width - inset * 2), Math.max(1, slot.height - inset * 2), 0);
+                Math.max(1, slot.width - inset * 2), Math.max(1, slot.height - inset * 2), scene.cell);
         if (fit.rows == 0 || fit.cell <= 0) return;
-        boolean letters = fit.cell >= 12 && !colorBlind;
+        boolean letters = !colorBlind;
         Graphics2D layer = (Graphics2D) g.create();
         try {
             layer.clipRect(slot.x + 1, slot.y + 1, Math.max(1, slot.width - 2), Math.max(1, slot.height - 2));

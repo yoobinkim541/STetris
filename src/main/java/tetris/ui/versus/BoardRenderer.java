@@ -13,7 +13,13 @@ import tetris.feature.versus.api.VersusRules;
 public final class BoardRenderer {
     private final BlockPalette palette = new BlockPalette();
     private final boolean colorBlind;
-    public BoardRenderer(boolean colorBlind) { this.colorBlind = colorBlind; }
+    /** true면 블록 글자를 클래식 게임 화면과 같은 모양으로 그린다 (레이드). 대전은 false */
+    private final boolean classicCells;
+    public BoardRenderer(boolean colorBlind) { this(colorBlind, false); }
+    public BoardRenderer(boolean colorBlind, boolean classicCells) {
+        this.colorBlind = colorBlind;
+        this.classicCells = classicCells;
+    }
     public void paint(Graphics2D g, int[][] cells, int x, int y, int size) {
         Graphics2D board=(Graphics2D) g.create();
         try {
@@ -61,6 +67,42 @@ public final class BoardRenderer {
                 }
             }
         } finally { layer.dispose(); }
+    }
+    /**
+     * 클래식 게임 화면과 같은 착지 표시: 점선 착지 지점과 떨어지는 조각 아래 빛기둥 (레이드).
+     * cells에는 떨어지는 조각이 합쳐져 있다. 착지 지점 위로 곧장 떨어지는 길은 비어 있으므로,
+     * 착지 지점 칸에서 위로 올라가 처음 만나는 칸이 그 열에서 떨어지는 조각의 맨 아래 칸이다.
+     * 조각과 겹치는 착지 칸은 그리지 않는다 (클래식처럼 조각이 위에 보인다).
+     */
+    public void paintLanding(Graphics2D g, int[][] cells, int[][] ghost, int x, int y, int size) {
+        if (cells == null || ghost == null || size <= 0) return;
+        int ghostTop = Integer.MAX_VALUE;
+        int pieceBottom = Integer.MIN_VALUE;
+        boolean[] columns = new boolean[cells.length == 0 ? 0 : cells[0].length];
+        for (int r = 0; r < ghost.length && r < cells.length; r++) {
+            for (int c = 0; c < ghost[r].length && c < columns.length; c++) {
+                if (ghost[r][c] == 0) continue;
+                ghostTop = Math.min(ghostTop, r);
+                if (columns[c]) continue;
+                columns[c] = true;
+                int above = r - 1;
+                while (above >= 0 && cells[above][c] == 0 && ghost[above][c] == 0) above--;
+                if (above >= 0 && cells[above][c] != 0) pieceBottom = Math.max(pieceBottom, above);
+            }
+        }
+        if (ghostTop == Integer.MAX_VALUE) return;
+        if (!colorBlind && pieceBottom != Integer.MIN_VALUE && ghostTop > pieceBottom) {
+            for (int c = 0; c < columns.length; c++) {
+                if (!columns[c]) continue;
+                tetris.ui.theme.BlockCells.paintBeam(g, x + c * size, y + (pieceBottom + 1) * size, y + ghostTop * size, size);
+            }
+        }
+        for (int r = 0; r < ghost.length && r < cells.length; r++) {
+            for (int c = 0; c < ghost[r].length && c < columns.length; c++) {
+                if (ghost[r][c] == 0 || cells[r][c] != 0) continue;
+                tetris.ui.theme.BlockCells.paintGhost(g, x + c * size, y + r * size, size, colorBlind);
+            }
+        }
     }
     /** items: cells와 같은 크기. 0이 아닌 칸은 아이템 문자(L·B·D·S)를 흰 바탕에 그린다 (R3-ITEM) */
     public void paint(Graphics2D g, int[][] cells, int[][] items, int x, int y, int size) {
@@ -114,6 +156,12 @@ public final class BoardRenderer {
             g.fillRect(x, y, size, size);
             g.setColor(new Color(0x323744));
             g.drawRect(x, y, size - 1, size - 1);
+            return;
+        }
+        if (classicCells && glyph && !attack) {
+            // 클래식 게임 화면과 같은 보석 칸·글자 (BlockCells)
+            tetris.ui.theme.BlockCells.paintBlock(g, x, y, size, fill,
+                    String.valueOf(BlockType.values()[value - 1].letter()), palette.textColor(fill));
             return;
         }
         tetris.ui.theme.GemTiles.paint(g, x, y, size, fill);
