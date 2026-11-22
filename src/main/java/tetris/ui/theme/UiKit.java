@@ -188,18 +188,26 @@ public final class UiKit {
     public static void paintButton(Graphics2D g, boolean selected, int x, int y, int width, int height, boolean colorBlind, float pulse) {
         if (width <= 2 || height <= 2) return;
         Color glow = colorBlind ? A11yColors.ORANGE : (selected ? CYAN : MAGENTA);
-        if (selected) {
-            Composite previous = g.getComposite();
-            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.25f + 0.35f * pulse));
-            g.setColor(glow);
-            g.fillRoundRect(x - 4, y - 3, width + 8, height + 6, height, height);
-            g.setComposite(previous);
-        }
         NineSlice slice = selected ? BUTTON_ON : BUTTON_IDLE;
         if (!slice.available()) slice = BUTTON_IDLE;
         if (slice.available()) {
+            if (selected && colorBlind) {
+                Composite previous = g.getComposite();
+                g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.28f + 0.25f * pulse));
+                g.setColor(glow);
+                int padX = Math.max(6, Math.min(20, height / 2));
+                g.fillRoundRect(x + padX, y - 2, Math.max(4, width - padX * 2), height + 4, height, height);
+                g.setComposite(previous);
+            }
             slice.paint(g, x, y, width, height);
             return;
+        }
+        if (selected) {
+            Composite previous = g.getComposite();
+            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.22f + 0.25f * pulse));
+            g.setColor(glow);
+            g.fillRoundRect(x - 3, y - 2, width + 6, height + 4, height, height);
+            g.setComposite(previous);
         }
         g.setPaint(new LinearGradientPaint(x, y, x, y + height,
                 new float[] {0f, 1f},

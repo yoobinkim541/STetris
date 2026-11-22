@@ -205,7 +205,7 @@ public final class BattlePanel extends JPanel {
             if (!notice.isEmpty()) {
                 g.setFont(tetris.ui.theme.GameTheme.fontFor(notice, 13, false));
                 g.setColor(new Color(0xFFD54F));
-                g.drawString(notice, 480 - g.getFontMetrics().stringWidth(notice) / 2, 636);
+                g.drawString(notice, 480 - g.getFontMetrics().stringWidth(notice) / 2, 620);
             }
             paintKeyBars(g);
             paintDebugLines(g);
@@ -236,40 +236,44 @@ public final class BattlePanel extends JPanel {
     private void paintVersusChrome(Graphics2D g) {
         paintBoardFrame(g, PlayerId.ONE);
         paintBoardFrame(g, PlayerId.TWO);
-        paintBadgeOnFrame(g, PlayerId.ONE, true);
-        paintBadgeOnFrame(g, PlayerId.TWO, false);
         if (snapshot.remainingMillis() >= 0) {
-            int w = 120;
-            int h = 28;
-            tetris.ui.theme.UiKit.paintCapsule(g, 480 - w / 2, 78, w, h);
+            int w = 116;
+            int h = 34;
+            int tx = 480 - w / 2;
+            int ty = 264;
+            g.setFont(tetris.ui.theme.GameTheme.text(12, false));
+            g.setColor(tetris.ui.theme.UiKit.CYAN);
+            tetris.ui.theme.UiKit.drawInBox(g, "남은 시간", new Rectangle(tx, ty - 18, w, 16), tetris.ui.theme.UiKit.Align.CENTER);
+            tetris.ui.theme.UiKit.paintCapsule(g, tx, ty, w, h);
             String digits = timeText(snapshot.remainingMillis()).replace("남은 시간 ", "");
-            g.setFont(tetris.ui.theme.GameTheme.digits(16));
+            g.setFont(tetris.ui.theme.GameTheme.digits(18));
             g.setColor(Color.WHITE);
-            center(g, digits, 480, 78 + h / 2 + g.getFontMetrics().getAscent() / 2 - 1);
+            tetris.ui.theme.UiKit.drawInAsset(g, tetris.ui.theme.UiKit.AssetSlot.CAPSULE,
+                    new Rectangle(tx, ty, w, h), digits, tetris.ui.theme.UiKit.Align.CENTER);
+            g.setFont(tetris.ui.theme.GameTheme.display(22));
+            g.setColor(tetris.ui.theme.UiKit.MAGENTA);
+            tetris.ui.theme.UiKit.drawInBox(g, "VS", new Rectangle(430, ty + h + 16, 100, 32), tetris.ui.theme.UiKit.Align.CENTER);
+        } else {
+            g.setFont(tetris.ui.theme.GameTheme.display(26));
+            g.setColor(new Color(0xE0C8FF));
+            tetris.ui.theme.UiKit.drawInBox(g, "VS", new Rectangle(430, 312, 100, 40), tetris.ui.theme.UiKit.Align.CENTER);
         }
     }
 
-    private void paintBadgeOnFrame(Graphics2D g, PlayerId id, boolean diamond) {
-        java.awt.Rectangle board = boardBounds(id);
-        int size = 30;
-        int frameTop = board.y - 90;
-        tetris.ui.theme.UiKit.paintBadge(g, diamond, board.x + board.width / 2 - size / 2, frameTop - size / 2, size);
-    }
     private static void center(Graphics2D g, String text, int x, int baseline) {
         tetris.ui.theme.GameTheme.drawCentered(g, text, x, baseline);
     }
 
     private void paintBoardFrame(Graphics2D g, PlayerId id) {
         java.awt.Rectangle board = boardBounds(id);
-        int inset = 8;
+        int inset = 14;
         int left = board.x - inset;
-        int top = board.y - 118 - inset;
+        int top = board.y - inset;
         int width = board.width + inset * 2;
-        int height = board.height + 118 + inset * 2;
+        int height = board.height + inset * 2;
         var clip = g.getClip();
         java.awt.geom.Area outside = new java.awt.geom.Area(new java.awt.Rectangle(0, 0, 960, 720));
         outside.subtract(new java.awt.geom.Area(board));
-        outside.subtract(new java.awt.geom.Area(new java.awt.Rectangle(board.x, board.y - 118, board.width, 110)));
         g.setClip(outside);
         tetris.ui.theme.UiKit.paintFrame(g, id == PlayerId.ONE ? tetris.ui.theme.UiKit.Tone.CYAN : tetris.ui.theme.UiKit.Tone.MAGENTA,
                 left, top, width, height);
@@ -281,7 +285,7 @@ public final class BattlePanel extends JPanel {
         String text = overlayText(snapshot);
         if (text.isEmpty()) return;
         g.setColor(new Color(0, 0, 0, 150));
-        g.fillRect(28, 90, 904, 540);
+        g.fillRect(16, 76, 928, 540);
         g.setColor(Color.WHITE);
         g.setFont(tetris.ui.theme.GameTheme.display(36));
         tetris.ui.theme.UiKit.drawInBox(g, text, new java.awt.Rectangle(80, 300, 800, 56), tetris.ui.theme.UiKit.Align.CENTER);
@@ -297,8 +301,8 @@ public final class BattlePanel extends JPanel {
         }
         if (snapshot.phase() == MatchPhase.COUNTDOWN) {
             // 처음 보는 사람이 설명 없이 자기 보드와 키를 찾게 한다 (S11-B2, R3-DEMO)
-            String hint = viewer == null ? "왼쪽 P1 · 오른쪽 P2 · 조작 키는 보드 옆"
-                    : "파란 테두리가 내 보드 (" + boardTitle(viewer, viewer) + ") · 조작 키는 보드 옆";
+            String hint = viewer == null ? "왼쪽 P1 · 오른쪽 P2 · 조작 키는 화면 아래"
+                    : "파란 테두리가 내 보드 (" + boardTitle(viewer, viewer) + ") · 조작 키는 화면 아래";
             g.setFont(tetris.ui.theme.GameTheme.text(16, false));
             tetris.ui.theme.UiKit.drawInBox(g, hint, new java.awt.Rectangle(40, 364, 880, 28), tetris.ui.theme.UiKit.Align.CENTER);
         }
@@ -308,13 +312,13 @@ public final class BattlePanel extends JPanel {
             tetris.ui.theme.UiKit.drawInBox(g, hint, new java.awt.Rectangle(40, 364, 880, 28), tetris.ui.theme.UiKit.Align.CENTER);
         }
     }
-    public static final int BOARD_CELL = 20;
+    public static final int BOARD_CELL = 24;
     public static final int QUEUE_CELL = 12;
     public static final int QUEUE_STRIDE = 14;
 
     public java.awt.Rectangle boardBounds(PlayerId id) {
-        int x = id == PlayerId.ONE ? 148 : 592;
-        return new java.awt.Rectangle(x, 210, BOARD_CELL * 10, BOARD_CELL * 20);
+        int x = id == PlayerId.ONE ? 166 : 554;
+        return new java.awt.Rectangle(x, 124, BOARD_CELL * 10, BOARD_CELL * 20);
     }
 
     public java.awt.Point boardSample(PlayerId id, int row, int col) {
@@ -323,10 +327,9 @@ public final class BattlePanel extends JPanel {
     }
 
     public java.awt.Rectangle attackQueueBounds(PlayerId id) {
-        java.awt.Rectangle board = boardBounds(id);
-        int x = id == PlayerId.ONE ? 16 : board.x + board.width + 8;
+        int x = id == PlayerId.ONE ? 22 : 818;
         int height = QUEUE_STRIDE * VersusRules.MAX_PENDING_ROWS;
-        return new java.awt.Rectangle(x, board.y + board.height - height, QUEUE_CELL * 10, height);
+        return new java.awt.Rectangle(x, 262, QUEUE_CELL * 10, height);
     }
 
     /** 대기열 칸 안쪽. row 0이 맨 아래(먼저 들어올 줄)다 */
@@ -355,29 +358,31 @@ public final class BattlePanel extends JPanel {
 
     private void paintModeCapsule(Graphics2D g) {
         String mode = modeLabel.isEmpty() ? "대전" : modeLabel;
-        int w = 168;
+        int w = 180;
         int h = 28;
         tetris.ui.theme.UiKit.paintCapsule(g, 480 - w / 2, 8, w, h);
-        g.setFont(tetris.ui.theme.GameTheme.fontFor(mode, 16, false));
+        g.setFont(tetris.ui.theme.GameTheme.fontFor(mode, 15, false));
         g.setColor(Color.WHITE);
-        center(g, mode, 480, 8 + h / 2 + g.getFontMetrics().getAscent() / 2 - 1);
+        tetris.ui.theme.UiKit.drawInAsset(g, tetris.ui.theme.UiKit.AssetSlot.CAPSULE,
+                new Rectangle(480 - w / 2, 8, w, h), mode, tetris.ui.theme.UiKit.Align.CENTER);
         String status = statusText(snapshot, viewer);
         g.setFont(tetris.ui.theme.GameTheme.fontFor(status, 12, false));
         g.setColor(tetris.ui.theme.UiKit.CYAN);
-        center(g, status, 480, 50);
+        tetris.ui.theme.UiKit.drawInBox(g, status, new Rectangle(340, 40, 280, 18), tetris.ui.theme.UiKit.Align.CENTER);
     }
 
     private void paintKeyBars(Graphics2D g) {
         String[] lines = guide.split("\\R");
         String first = lines.length > 0 ? shorten(lines[0]) : "";
         String second = lines.length > 1 ? shorten(lines[1]) : "";
-        if (lines.length > 2) second = second + "   " + shorten(lines[2]);
-        int inset = 16;
-        int barH = 36;
-        int y2 = 720 - inset - barH;
-        int y1 = y2 - 8 - barH;
-        paintBar(g, inset, y1, 960 - inset * 2, first);
-        paintBar(g, inset, y2, 960 - inset * 2, second);
+        if (lines.length > 2) second = second + "    " + shorten(lines[2]);
+        int inset = 22;
+        int barH = 34;
+        int gap = 12;
+        int y2 = 720 - 12 - barH;
+        int y1 = y2 - gap - barH;
+        paintBar(g, inset, y1, 960 - inset * 2, barH, first, tetris.ui.theme.UiKit.CYAN);
+        paintBar(g, inset, y2, 960 - inset * 2, barH, second, tetris.ui.theme.UiKit.MAGENTA);
     }
 
     private static String shorten(java.util.List<String> lines) {
@@ -389,13 +394,15 @@ public final class BattlePanel extends JPanel {
                 .replace("내리기", "낙하").replace("반시계", "반대");
     }
 
-    private void paintBar(Graphics2D g, int x, int y, int w, String text) {
-        int h = 36;
-        tetris.ui.theme.UiKit.paintCapsule(g, x, y, w, h);
-        g.setFont(tetris.ui.theme.GameTheme.text(12, false));
-        g.setColor(Color.WHITE);
-        tetris.ui.theme.UiKit.drawInAsset(g, tetris.ui.theme.UiKit.AssetSlot.CAPSULE,
-                new java.awt.Rectangle(x, y, w, h), text == null ? "" : text, tetris.ui.theme.UiKit.Align.CENTER);
+    private void paintBar(Graphics2D g, int x, int y, int w, int h, String text, Color accent) {
+        g.setColor(new Color(8, 12, 28, 212));
+        g.fillRoundRect(x, y, w, h, 10, 10);
+        g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 115));
+        g.drawRoundRect(x, y, w - 1, h - 1, 10, 10);
+        g.setFont(tetris.ui.theme.GameTheme.text(13, false));
+        g.setColor(new Color(0xF0F4FF));
+        tetris.ui.theme.UiKit.drawInBox(g, text == null ? "" : text,
+                new java.awt.Rectangle(x + 14, y, Math.max(8, w - 28), h), tetris.ui.theme.UiKit.Align.CENTER);
     }
     private static String fitGuide(Graphics2D g, String text, int limit) {
         String drawn = text;
@@ -420,6 +427,7 @@ public final class BattlePanel extends JPanel {
     private void paintPlayer(Graphics2D g, MatchSnapshot.PlayerView player, PlayerId id) {
         java.awt.Rectangle board = boardBounds(id);
         boolean mine = viewer != null && viewer == id;
+        boolean p1 = id == PlayerId.ONE;
         paintNameTab(g, player, id, board, mine);
         if (mine && colorBlind) {
             g.setColor(tetris.ui.fx.A11yColors.mine(true));
@@ -427,29 +435,38 @@ public final class BattlePanel extends JPanel {
             g.drawRect(board.x - 2, board.y - 2, board.width + 3, board.height + 3);
             g.setStroke(new BasicStroke(1f));
         }
-        int boxW = board.width / 2 - 6;
-        int boxY = board.y - 78;
-        int boxH = 70;
-        tetris.ui.theme.UiKit.paintTab(g, id == PlayerId.ONE, board.x, boxY, boxW, boxH);
-        tetris.ui.theme.UiKit.paintTab(g, id != PlayerId.ONE, board.x + boxW + 8, boxY, boxW, boxH);
-        labelTab(g, "홀드", board.x, boxY, boxW, boxH);
-        labelTab(g, "다음", board.x + boxW + 8, boxY, boxW, boxH);
-        java.awt.Rectangle holdSlot = previewSlot(board.x, boxY, boxW, boxH);
-        java.awt.Rectangle nextSlot = previewSlot(board.x + boxW + 8, boxY, boxW, boxH);
+
+        // 외곽 사이드 칼럼: 상단 홀드 · 중앙 받을 공격 · 하단 대형 다음 3미리보기
+        int colX = p1 ? 24 : 820;
+        int colW = 116;
+        int holdY = 142;
+        int holdH = 84;
+        labelAbove(g, "홀드", colX, holdY - 18, colW, p1);
+        tetris.ui.theme.UiKit.paintTab(g, p1, colX, holdY, colW, holdH);
+        Rectangle holdSlot = new Rectangle(colX + 10, holdY + 10, colW - 20, holdH - 20);
         renderer.paintFitted(g, player.hold(), holdSlot.x, holdSlot.y, holdSlot.width, holdSlot.height);
+
+        int nextY = 430;
+        int nextH = 174;
+        labelAbove(g, "다음", colX, nextY - 18, colW, p1);
+        tetris.ui.theme.UiKit.paintTab(g, p1, colX, nextY, colW, nextH);
+        Rectangle nextSlot = new Rectangle(colX + 10, nextY + 10, colW - 20, nextH - 20);
         java.util.List<int[][]> previews = player.previews().isEmpty()
                 ? java.util.List.<int[][]>of(player.next()) : player.previews();
         if (!previews.isEmpty()) {
-            int slotW = Math.max(1, nextSlot.width / previews.size());
-            for (int i = 0; i < previews.size(); i++) {
-                renderer.paintFitted(g, previews.get(i), nextSlot.x + i * slotW, nextSlot.y, Math.max(1, slotW - 2), nextSlot.height);
+            int count = Math.min(3, previews.size());
+            int gap = 4;
+            int slotH = Math.max(12, (nextSlot.height - gap * (count - 1)) / count);
+            for (int i = 0; i < count; i++) {
+                renderer.paintFitted(g, previews.get(i), nextSlot.x, nextSlot.y + i * (slotH + gap), nextSlot.width, slotH);
             }
         }
+
         renderer.paintGhost(g, player.ghost(), board.x, board.y, BOARD_CELL);
         renderer.paintPlayfield(g, player.cells(), player.items(), board.x, board.y, BOARD_CELL);
         paintAttackQueue(g, player, id);
         paintThreatGauge(g, player, id, board);
-        int combo = id == PlayerId.ONE ? comboOne : comboTwo;
+        int combo = p1 ? comboOne : comboTwo;
         if (combo >= 2) {
             g.setFont(tetris.ui.theme.GameTheme.display(28));
             tetris.ui.theme.UiKit.drawInBox(g, combo + " COMBO",
@@ -457,41 +474,40 @@ public final class BattlePanel extends JPanel {
         }
     }
 
-    private static void labelTab(Graphics2D g, String text, int x, int y, int width, int height) {
-        int inset = tetris.ui.theme.UiKit.tabTitleInset(width, height);
-        int size = 13;
-        g.setFont(tetris.ui.theme.GameTheme.text(size, true));
-        while (size > 9 && g.getFontMetrics().stringWidth(text) > width - inset * 2) {
-            g.setFont(tetris.ui.theme.GameTheme.text(--size, true));
-        }
-        tetris.ui.theme.UiKit.drawInAsset(g, tetris.ui.theme.UiKit.AssetSlot.TAB,
-                new java.awt.Rectangle(x, y, width, Math.max(16, inset + 16)), text, tetris.ui.theme.UiKit.Align.CENTER);
-    }
-
-    private static java.awt.Rectangle previewSlot(int x, int y, int width, int height) {
-        int top = tetris.ui.theme.UiKit.tabTitleInset(width, height) + 8;
-        int inset = 8;
-        return new java.awt.Rectangle(x + inset, y + top, Math.max(1, width - inset * 2), Math.max(1, height - top - inset));
+    private static void labelAbove(Graphics2D g, String text, int x, int y, int width, boolean cyan) {
+        g.setFont(tetris.ui.theme.GameTheme.text(13, true));
+        g.setColor(cyan ? new Color(0xA6EEFF) : new Color(0xFFB3EE));
+        tetris.ui.theme.UiKit.drawInBox(g, text, new Rectangle(x, y, width, 16), tetris.ui.theme.UiKit.Align.CENTER);
     }
 
     private void paintNameTab(Graphics2D g, MatchSnapshot.PlayerView player, PlayerId id,
                               java.awt.Rectangle board, boolean mine) {
-        int h = 28;
-        int y = board.y - 118;
-        tetris.ui.theme.UiKit.paintCapsule(g, board.x, y, board.width, h);
-        String mark = colorBlind ? (id == PlayerId.ONE ? "■ " : "● ") : (id == PlayerId.ONE ? "◆ " : "★ ");
-        String name = mark + boardTitle(id, viewer);
-        g.setFont(tetris.ui.theme.GameTheme.fontFor(name, Math.max(14, h * 3 / 5), false));
-        g.setColor(mine ? tetris.ui.fx.A11yColors.mine(colorBlind) : Color.WHITE);
-        java.awt.Rectangle tab = new java.awt.Rectangle(board.x, y, board.width, h);
-        java.awt.Rectangle inner = tetris.ui.theme.UiKit.contentBox(tetris.ui.theme.UiKit.AssetSlot.CAPSULE, tab);
-        java.awt.Rectangle left = new java.awt.Rectangle(inner.x, inner.y, inner.width * 55 / 100, inner.height);
-        tetris.ui.theme.UiKit.drawIconText(g, left, mark, boardTitle(id, viewer));
+        int h = 30;
+        int y = board.y - 48;
+        boolean p1 = id == PlayerId.ONE;
+        Color accent = mine ? tetris.ui.fx.A11yColors.mine(colorBlind)
+                : (p1 ? tetris.ui.theme.UiKit.CYAN : tetris.ui.theme.UiKit.MAGENTA);
+        g.setColor(new Color(8, 12, 28, 224));
+        g.fillRoundRect(board.x, y, board.width, h, 10, 10);
+        g.setStroke(new BasicStroke(mine ? 2.2f : 1.5f));
+        g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), mine ? 235 : 175));
+        g.drawRoundRect(board.x, y, board.width - 1, h - 1, 10, 10);
+        g.setStroke(new BasicStroke(1f));
+
+        String mark = colorBlind ? (p1 ? "■ " : "● ") : (p1 ? "◆ " : "★ ");
+        String title = mark + boardTitle(id, viewer);
+        g.setFont(tetris.ui.theme.GameTheme.fontFor(title, 15, false));
+        g.setColor(accent);
+        tetris.ui.theme.UiKit.drawInBox(g, title,
+                new java.awt.Rectangle(board.x + 12, y, board.width * 58 / 100, h),
+                tetris.ui.theme.UiKit.Align.LEFT);
+
         String score = String.valueOf(player.score());
-        g.setFont(tetris.ui.theme.GameTheme.digits(Math.max(12, h * 3 / 5)));
+        g.setFont(tetris.ui.theme.GameTheme.digits(17));
         g.setColor(Color.WHITE);
-        tetris.ui.theme.UiKit.drawInBox(g, score, new java.awt.Rectangle(inner.x + inner.width / 2, inner.y,
-                inner.width / 2, inner.height), tetris.ui.theme.UiKit.Align.RIGHT);
+        tetris.ui.theme.UiKit.drawInBox(g, score,
+                new java.awt.Rectangle(board.x + board.width / 2, y, board.width / 2 - 12, h),
+                tetris.ui.theme.UiKit.Align.RIGHT);
     }
 
     private void paintAttackQueue(Graphics2D g, MatchSnapshot.PlayerView player, PlayerId id) {
@@ -499,10 +515,10 @@ public final class BattlePanel extends JPanel {
         int count = player.pendingRows().size();
         String label = "받을 공격 " + count + "/" + VersusRules.MAX_PENDING_ROWS;
         g.setFont(tetris.ui.theme.GameTheme.fontFor(label, 12, false));
-        g.setColor(colorBlind ? tetris.ui.fx.A11yColors.ORANGE : Color.WHITE);
+        g.setColor(colorBlind ? tetris.ui.fx.A11yColors.ORANGE : new Color(0xD8E4F8));
         tetris.ui.theme.UiKit.drawInBox(g, label,
                 new java.awt.Rectangle(queue.x - 2, queue.y - 18, queue.width + 4, 16),
-                id == PlayerId.ONE ? tetris.ui.theme.UiKit.Align.LEFT : tetris.ui.theme.UiKit.Align.RIGHT);
+                tetris.ui.theme.UiKit.Align.CENTER);
         int pad = 3;
         var clip = g.getClip();
         java.awt.geom.Area outside = new java.awt.geom.Area(new java.awt.Rectangle(0, 0, 960, 720));
@@ -520,10 +536,9 @@ public final class BattlePanel extends JPanel {
 
     private void paintThreatGauge(Graphics2D g, MatchSnapshot.PlayerView player, PlayerId id, java.awt.Rectangle board) {
         int count = player.pendingRows().size();
-        java.awt.Rectangle queue = attackQueueBounds(id);
         int gaugeW = 4;
-        int x = id == PlayerId.ONE ? queue.x + queue.width + 2 : board.x + board.width + 2;
-        g.setColor(new Color(20, 8, 16, 140));
+        int x = id == PlayerId.ONE ? 144 : 812;
+        g.setColor(new Color(20, 8, 16, 150));
         g.fillRect(x, board.y, gaugeW, board.height);
         int filled = board.height * count / VersusRules.MAX_PENDING_ROWS;
         if (filled <= 0) return;

@@ -298,89 +298,204 @@ public class GamePanel extends JPanel implements GameListener {
     }
 
     private void drawSideTabs(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
-        int titleH = tabTitleHeight();
+        drawTabLabelAbove(g, "홀드", layout.hold);
         UiKit.paintTab(g, false, layout.hold.x, layout.hold.y, layout.hold.width, layout.hold.height);
-        drawTabLabel(g, "홀드", layout.hold);
+        Rectangle holdInner = pieceBox(layout.hold);
         if (snapshot != null && snapshot.holdBlock() != null) {
-            drawPiece(g, snapshot.holdBlock(), pieceBox(layout.hold, titleH));
+            drawPiece(g, snapshot.holdBlock(), holdInner);
         } else if (snapshot == null || snapshot.mode() != tetris.feature.game.GameMode.ITEM) {
-            g.setFont(Theme.font("홀드 없음", Math.max(12, cellSize / 2), false));
-            g.setColor(Theme.DIM_TEXT);
-            UiKit.drawInBox(g, "홀드 없음", new Rectangle(layout.hold.x, layout.hold.y + titleH,
-                    layout.hold.width, Math.max(8, layout.hold.height - titleH)), UiKit.Align.CENTER);
+            g.setFont(Theme.font("비어 있음", Math.max(10, Math.min(13, cellSize * 2 / 5)), false));
+            g.setColor(new Color(0x8EA0BE));
+            UiKit.drawInBox(g, "홀드 없음", holdInner, UiKit.Align.CENTER);
         }
+
+        drawTabLabelAbove(g, "다음", layout.next);
         UiKit.paintTab(g, true, layout.next.x, layout.next.y, layout.next.width, layout.next.height);
-        drawTabLabel(g, "다음", layout.next);
+        Rectangle nextInner = pieceBox(layout.next);
         boolean modern = snapshot != null && snapshot.nextBlocks().size() > 1;
         if (modern) {
             int count = snapshot.nextBlocks().size();
-            int boxH = cellSize * 2;
-            int gap = 8;
-            int stack = count * boxH + Math.max(0, count - 1) * gap;
-            int innerTop = layout.next.y + titleH;
-            int y = innerTop + Math.max(0, (Math.max(boxH, layout.next.height - titleH) - stack) / 2);
+            int gap = Math.max(4, cellSize / 4);
+            int boxH = Math.max(8, (nextInner.height - gap * (count - 1)) / count);
+            int y = nextInner.y;
             for (Block preview : snapshot.nextBlocks()) {
-                drawPiece(g, preview, new Rectangle(layout.next.x + 8, y, Math.max(1, layout.next.width - 16), boxH));
+                drawPiece(g, preview, new Rectangle(nextInner.x, y, nextInner.width, boxH));
                 y += boxH + gap;
             }
         } else if (snapshot != null && snapshot.nextBlock() != null) {
-            drawPiece(g, snapshot.nextBlock(), firstNextBox());
+            drawPiece(g, snapshot.nextBlock(), nextInner);
         }
+
         drawStatus(g, layout);
-        if (snapshot != null) {
-            int label = Math.max(12, Math.min(14, cellSize / 2));
-            drawEffects(g, snapshot.effects(), layout.effects.x, layout.effects.y, layout.effects.width, label,
-                    layout.effects.y + layout.effects.height);
+        drawLeftPanel(g, layout);
+    }
+
+    private void drawLeftPanel(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
+        Rectangle box = layout.effects;
+        if (box.width < 12 || box.height < 16) return;
+        // 다크 글래스 카드 배경 (노란색 금지: EffectsPanelTest가 효과가 없을 때 ACCENT 픽셀 0을 검증함)
+        g.setColor(new Color(8, 12, 28, 195));
+        g.fillRoundRect(box.x, box.y, box.width, box.height, 12, 12);
+        g.setColor(new Color(61, 224, 255, 85));
+        g.drawRoundRect(box.x, box.y, box.width - 1, box.height - 1, 12, 12);
+
+        if (snapshot != null && !snapshot.effects().isEmpty()) {
+            int label = Math.max(11, Math.min(13, cellSize / 2));
+            Graphics2D clip = (Graphics2D) g.create();
+            try {
+                clip.clipRect(box.x + 2, box.y + 2, Math.max(1, box.width - 4), Math.max(1, box.height - 4));
+                drawEffects(clip, snapshot.effects(), box.x + 6, box.y + 6, Math.max(12, box.width - 12), label,
+                        box.y + box.height - 6);
+            } finally {
+                clip.dispose();
+            }
+            return;
+        }
+        drawPlayInfoCard(g, box);
+    }
+
+    private void drawPlayInfoCard(Graphics2D g, Rectangle box) {
+        int pad = Math.max(6, Math.min(10, box.width / 12));
+        int innerW = Math.max(8, box.width - pad * 2);
+        int headerSize = Math.max(10, Math.min(13, cellSize * 2 / 5));
+        int rowLabelSize = Math.max(9, Math.min(11, cellSize / 3 + 1));
+        int rowValSize = Math.max(10, Math.min(13, cellSize * 2 / 5));
+        int y = box.y + pad;
+
+        String title = colorBlindMode ? "색맹 설정"
+                : (snapshot != null && snapshot.mode() == tetris.feature.game.GameMode.ITEM ? "아이템 정보" : "플레이 상태");
+        g.setFont(Theme.font(title, headerSize, true));
+        g.setColor(UiKit.CYAN);
+        UiKit.drawInBox(g, title, new Rectangle(box.x + pad, y, innerW, headerSize + 4), UiKit.Align.CENTER);
+        y += headerSize + 8;
+
+        g.setColor(new Color(61, 224, 255, 60));
+        g.drawLine(box.x + pad, y, box.x + box.width - pad, y);
+        y += 10;
+
+        String modeVal = snapshot == null ? "준비"
+                : (snapshot.mode() == tetris.feature.game.GameMode.ITEM ? "아이템" : "클래식");
+        String diffVal = snapshot == null ? "보통" : switch (snapshot.difficulty()) {
+            case EASY -> "쉬움";
+            case HARD -> "어려움";
+            default -> "보통";
+        };
+        String thirdLabel;
+        String thirdVal;
+        if (colorBlindMode) {
+            thirdLabel = "팔레트";
+            thirdVal = "Okabe-Ito";
+        } else if (snapshot != null && snapshot.mode() == tetris.feature.game.GameMode.ITEM) {
+            thirdLabel = "다음 아이템";
+            thirdVal = snapshot.nextItemLines() + "줄 후";
+        } else {
+            thirdLabel = "미리보기";
+            thirdVal = snapshot != null && snapshot.nextBlocks().size() > 1
+                    ? "NEXT " + snapshot.nextBlocks().size() : "NEXT 1";
+        }
+        String fourthLabel = "홀드";
+        String fourthVal = snapshot != null && snapshot.holdBlock() != null ? "보관 중" : "대기";
+
+        String[][] rows = {
+                {"모드", modeVal},
+                {"난이도", diffVal},
+                {thirdLabel, thirdVal},
+                {fourthLabel, fourthVal}
+        };
+        int blockH = rowLabelSize + rowValSize + 10;
+        int avail = Math.max(blockH, box.y + box.height - pad - y);
+        int rowStep = Math.min(blockH + 22, Math.max(blockH, avail / rows.length));
+        for (int i = 0; i < rows.length; i++) {
+            String[] row = rows[i];
+            if (y + rowLabelSize + rowValSize > box.y + box.height - 4) break;
+            g.setFont(Theme.font(row[0], rowLabelSize, false));
+            g.setColor(new Color(0x9FB0CC));
+            UiKit.drawInBox(g, row[0], new Rectangle(box.x + pad, y, innerW, rowLabelSize + 2), UiKit.Align.LEFT);
+            g.setFont(Theme.font(row[1], rowValSize, false));
+            g.setColor(Color.WHITE);
+            UiKit.drawInBox(g, row[1], new Rectangle(box.x + pad, y + rowLabelSize + 3, innerW, rowValSize + 4), UiKit.Align.LEFT);
+            if (i < rows.length - 1 && y + rowStep - 6 < box.y + box.height - 6) {
+                g.setColor(new Color(61, 224, 255, 28));
+                g.drawLine(box.x + pad, y + rowStep - 6, box.x + box.width - pad, y + rowStep - 6);
+            }
+            y += rowStep;
         }
     }
 
     private void drawHud(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
-        drawCapsule(g, layout.score, "점수", String.valueOf(snapshot == null ? 0 : fx.displayScore()));
         drawCapsule(g, layout.level, "레벨", String.valueOf(snapshot == null ? 1 : snapshot.level()));
+        drawCapsule(g, layout.score, "점수", String.valueOf(snapshot == null ? 0 : fx.displayScore()));
         drawCapsule(g, layout.lines, "줄", String.valueOf(snapshot == null ? 0 : snapshot.lines()));
         drawCapsule(g, layout.time, "시간", elapsedText());
     }
 
     private void drawKeyGuide(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
-        UiKit.paintCapsule(g, layout.guide.x, layout.guide.y, layout.guide.width, layout.guide.height);
-        g.setFont(tetris.ui.theme.GameTheme.text(12, false));
-        g.setColor(Color.WHITE);
-        UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, layout.guide, compactGuide(), UiKit.Align.CENTER);
-    }
+        Rectangle bar = layout.guide;
+        if (bar.width < 16 || bar.height < 16) return;
+        g.setColor(new Color(8, 12, 28, 210));
+        g.fillRoundRect(bar.x, bar.y, bar.width, bar.height, 12, 12);
+        g.setColor(new Color(61, 224, 255, 110));
+        g.drawRoundRect(bar.x, bar.y, bar.width - 1, bar.height - 1, 12, 12);
 
-    private String compactGuide() {
-        String rotate = keyGuide.length > 2 ? keyGuide[2] : "↑ 회전";
-        String pause = keyGuide.length > 4 ? keyGuide[4] : "P 일시정지";
-        String quit = keyGuide.length > 5 ? keyGuide[5] : "Q 나가기";
-        return rotate + "   " + pause + "   " + quit;
-    }
-
-    private int tabTitleHeight() {
-        tetris.ui.theme.SoloLayout layout = tetris.ui.theme.SoloLayout.of(cellSize);
-        int inset = tetris.ui.theme.UiKit.tabTitleInset(layout.hold.width, layout.hold.height);
-        return inset + Math.max(12, Math.min(16, cellSize / 2)) + 4;
-    }
-
-    private void drawTabLabel(Graphics2D g, String label, Rectangle tab) {
-        int inset = tetris.ui.theme.UiKit.tabTitleInset(tab.width, tab.height);
-        int size = Math.max(11, Math.min(16, cellSize / 2));
-        g.setFont(Theme.font(label, size, true));
-        int limit = Math.max(8, tab.width - inset * 2);
-        while (size > 9 && g.getFontMetrics().stringWidth(label) > limit) {
-            g.setFont(Theme.font(label, --size, true));
+        String[] lines = fullGuideLines();
+        int padX = 12;
+        int padY = 4;
+        int innerH = Math.max(8, bar.height - padY * 2);
+        int lineH = Math.max(8, innerH / lines.length);
+        int fontSize = Math.max(10, Math.min(13, lineH - 4));
+        g.setColor(new Color(0xE8EEF8));
+        for (int i = 0; i < lines.length; i++) {
+            g.setFont(Theme.font(lines[i], fontSize, false));
+            UiKit.drawInBox(g, lines[i],
+                    new Rectangle(bar.x + padX, bar.y + padY + i * lineH, Math.max(8, bar.width - padX * 2), lineH),
+                    UiKit.Align.CENTER);
         }
-        g.setColor(Color.WHITE);
-        UiKit.drawInAsset(g, UiKit.AssetSlot.TAB,
-                new Rectangle(tab.x, tab.y, tab.width, Math.max(16, inset + size + 4)), label, UiKit.Align.CENTER);
+    }
+
+    private String[] fullGuideLines() {
+        String move = keyGuide.length > 0 ? compactSpaces(keyGuide[0]) : "←/→ 이동";
+        String soft = keyGuide.length > 1 ? compactSpaces(keyGuide[1]) : "↓ 소프트 드롭";
+        String rot = expandTrailingKey(keyGuide.length > 2 ? compactSpaces(keyGuide[2]) : "↑ 회전 / Z", "반시계");
+        String hard = expandTrailingKey(keyGuide.length > 3 ? compactSpaces(keyGuide[3]) : "Space 하드 드롭 / C", "홀드");
+        String pause = keyGuide.length > 4 ? compactSpaces(keyGuide[4]) : "P 일시정지";
+        String quit = keyGuide.length > 5 ? compactSpaces(keyGuide[5]) : "Q 게임 끝내기";
+        return new String[] {
+                move + "   " + rot + "   " + soft,
+                hard + "   " + pause + "   " + quit
+        };
+    }
+
+    private static String expandTrailingKey(String raw, String suffixLabel) {
+        int slash = raw.lastIndexOf(" / ");
+        if (slash <= 0 || slash + 3 >= raw.length()) return raw;
+        return raw.substring(0, slash).trim() + "   " + raw.substring(slash + 3).trim() + " " + suffixLabel;
+    }
+
+    private static String compactSpaces(String raw) {
+        return raw == null ? "" : raw.trim().replaceAll("\\s{2,}", " ");
+    }
+
+    private void drawTabLabelAbove(Graphics2D g, String label, Rectangle tab) {
+        int labelH = Math.max(12, Math.min(16, cellSize / 2));
+        g.setFont(Theme.font(label, labelH, true));
+        g.setColor(new Color(0xD8E4F8));
+        UiKit.drawInBox(g, label, new Rectangle(tab.x, Math.max(0, tab.y - labelH - 3), tab.width, labelH), UiKit.Align.CENTER);
     }
 
     private void drawStatus(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
         if (layout.status.height < 8 || layout.status.width < 8) return;
+        int labelH = Math.max(10, Math.min(13, cellSize * 2 / 5));
+        g.setFont(Theme.font("모드", labelH, false));
+        g.setColor(new Color(0x9FB0CC));
+        UiKit.drawInBox(g, "모드",
+                new Rectangle(layout.status.x, layout.status.y - labelH - 3, layout.status.width, labelH),
+                UiKit.Align.CENTER);
         String text = statusText();
-        int h = Math.min(layout.status.height, Math.max(28, cellSize + 6));
-        Rectangle box = new Rectangle(layout.status.x, layout.status.y, layout.status.width, h);
+        Rectangle box = layout.status;
         UiKit.paintCapsule(g, box.x, box.y, box.width, box.height);
-        g.setFont(Theme.font(text, Math.max(12, Math.min(13, h - 8)), false));
+        Rectangle inner = UiKit.contentBox(UiKit.AssetSlot.CAPSULE, box);
+        int size = fitCapsuleFont(g, text, Math.max(16, inner.width - 6), Math.max(10, Math.min(13, box.height - 10)), 9, false);
+        g.setFont(Theme.font(text, size, false));
         g.setColor(Color.WHITE);
         UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, box, text, UiKit.Align.CENTER);
     }
@@ -393,22 +508,30 @@ public class GamePanel extends JPanel implements GameListener {
             case HARD -> "어려움";
             default -> "보통";
         };
-        String text = mode + " · " + diff;
-        if (snapshot.mode() == tetris.feature.game.GameMode.ITEM) text += " · 다음 " + snapshot.nextItemLines();
-        return text;
+        return mode + " · " + diff;
     }
 
     private void drawCapsule(Graphics2D g, Rectangle box, String label, String value) {
         if (box.width < 4 || box.height < 4) return;
         UiKit.paintCapsule(g, box.x, box.y, box.width, box.height);
-        int labelH = 12;
-        int gap = 4;
+        int labelH = Math.max(10, Math.min(13, cellSize * 2 / 5));
+        int gap = 3;
         g.setFont(Theme.font(label, labelH, false));
         g.setColor(UiKit.CYAN);
         UiKit.drawInBox(g, label, new Rectangle(box.x, box.y - gap - labelH, box.width, labelH), UiKit.Align.CENTER);
-        g.setFont(Theme.font(value, Math.max(12, box.height / 2), true));
+        Rectangle inner = UiKit.contentBox(UiKit.AssetSlot.CAPSULE, box);
+        int size = fitCapsuleFont(g, value, Math.max(16, inner.width - 8), Math.max(11, Math.min(18, box.height * 3 / 5)), 10, true);
+        g.setFont(Theme.font(value, size, true));
         g.setColor(Color.WHITE);
         UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, box, value, UiKit.Align.CENTER);
+    }
+
+    private static int fitCapsuleFont(Graphics2D g, String text, int maxWidth, int maxSize, int minSize, boolean bold) {
+        for (int size = maxSize; size >= minSize; size--) {
+            g.setFont(Theme.font(text, size, bold));
+            if (GameTheme.width(g, text) <= maxWidth) return size;
+        }
+        return minSize;
     }
 
     private void drawPiece(Graphics2D g, Block piece, Rectangle box) {
@@ -431,15 +554,15 @@ public class GamePanel extends JPanel implements GameListener {
         }
     }
 
-    private Rectangle pieceBox(Rectangle tab, int labelHeight) {
-        return new Rectangle(tab.x + 8, tab.y + labelHeight + 8, Math.max(1, tab.width - 16),
-                Math.max(1, tab.height - labelHeight - 16));
+    private Rectangle pieceBox(Rectangle tab) {
+        int inset = Math.max(8, UiKit.tabCorner(tab.width, tab.height) / 2);
+        return new Rectangle(tab.x + inset, tab.y + inset, Math.max(1, tab.width - inset * 2),
+                Math.max(1, tab.height - inset * 2));
     }
 
     private Rectangle firstNextBox() {
         tetris.ui.theme.SoloLayout layout = tetris.ui.theme.SoloLayout.of(cellSize);
-
-        return pieceBox(layout.next, tabTitleHeight());
+        return pieceBox(layout.next);
     }
 
     private static final int GAUGE_SEGMENTS = 10; // 지속 효과의 최대 남은 블록 수

@@ -106,87 +106,107 @@ public class ScoreBoardPanel extends JPanel {
         int unit = Theme.unit(h);
 
         tetris.ui.theme.GameTheme.paintTitle(g2, "스코어보드", Math.max(22, unit * 2), w / 2, unit * 3, false);
-        String categoryLabel = "◀ " + CATEGORIES[category] + " ▶";
-        g2.setFont(Theme.font(categoryLabel, unit, false));
+        String categoryLabel = "◀  " + CATEGORIES[category] + "  ▶";
+        int catFont = Math.max(14, unit * 4 / 5);
+        g2.setFont(Theme.font(categoryLabel, catFont, false));
         hits.begin(null);
-        int textWidth = g2.getFontMetrics().stringWidth(categoryLabel);
-        int textX = w / 2 - textWidth / 2;
-        int labelBaseline = unit * 4 + unit / 2;
-        int textTop = labelBaseline - g2.getFontMetrics().getAscent();
-        int textH = g2.getFontMetrics().getAscent() + g2.getFontMetrics().getDescent();
-        int arrow = g2.getFontMetrics().stringWidth("◀") + 8;
-        hits.add("prev", textX - 4, textTop - 4, arrow, textH + 8);
-        hits.add("next", textX + textWidth - arrow + 4, textTop - 4, arrow, textH + 8);
-        Theme.drawCentered(g2, categoryLabel, w / 2, labelBaseline);
-        int closeW = Math.max(64, unit * 4);
-        int closeH = Math.max(28, unit + 8);
-        int closeX = w - closeW - 8;
-        int closeY = 8;
-        tetris.ui.theme.UiKit.paintCapsule(g2, closeX, closeY, closeW, closeH);
+        int textWidth = tetris.ui.theme.GameTheme.width(g2, categoryLabel);
+        int pillW = Math.min(w - unit * 4, Math.max(textWidth + 36, unit * 10));
+        int pillH = Math.max(26, catFont + 10);
+        int pillX = (w - pillW) / 2;
+        int pillY = unit * 4 - pillH / 2 + 4;
+        g2.setColor(new Color(8, 12, 28, 210));
+        g2.fillRoundRect(pillX, pillY, pillW, pillH, pillH, pillH);
+        g2.setColor(new Color(61, 224, 255, 130));
+        g2.drawRoundRect(pillX, pillY, pillW - 1, pillH - 1, pillH, pillH);
+        g2.setColor(Color.WHITE);
+        tetris.ui.theme.UiKit.drawInBox(g2, categoryLabel, new java.awt.Rectangle(pillX + 10, pillY, pillW - 20, pillH),
+                tetris.ui.theme.UiKit.Align.CENTER);
+        int arrow = Math.max(28, g2.getFontMetrics().stringWidth("◀") + 16);
+        hits.add("prev", pillX, pillY, arrow, pillH);
+        hits.add("next", pillX + pillW - arrow, pillY, arrow, pillH);
+
+        java.awt.Rectangle table = tableBounds();
+        int closeW = Math.max(68, unit * 4);
+        int closeH = Math.max(28, pillH);
+        int closeX = table.x;
+        int closeY = pillY + (pillH - closeH) / 2;
+        g2.setColor(new Color(8, 12, 28, 210));
+        g2.fillRoundRect(closeX, closeY, closeW, closeH, 10, 10);
+        g2.setColor(new Color(61, 224, 255, 150));
+        g2.drawRoundRect(closeX, closeY, closeW - 1, closeH - 1, 10, 10);
         g2.setFont(Theme.font("닫기", Math.max(12, unit * 3 / 4), false));
         g2.setColor(Theme.TEXT);
         tetris.ui.theme.UiKit.drawInBox(g2, "닫기", new java.awt.Rectangle(closeX, closeY, closeW, closeH),
                 tetris.ui.theme.UiKit.Align.CENTER);
         hits.add("close", closeX, closeY, closeW, closeH);
 
-        java.awt.Rectangle table = tableBounds();
-        g2.setColor(new Color(8, 14, 32, 190));
-        g2.fillRoundRect(table.x, table.y, table.width, table.height, 16, 16);
+        g2.setColor(new Color(8, 14, 32, 205));
+        g2.fillRoundRect(table.x + 8, table.y + 8, table.width - 16, table.height - 16, 16, 16);
         tetris.ui.theme.UiKit.paintFrame(g2, tetris.ui.theme.UiKit.Tone.CYAN, table.x, table.y, table.width, table.height);
 
-        int corner = 72;
+        int padX = Math.max(44, unit * 2 + 6);
         int rowHeight = unit + unit / 2;
-        int headerBaseline = table.y + corner;
-        int rankX = table.x + corner;
-        int nameX = rankX + unit * 2;
-        int levelRight = table.x + table.width - corner;
-        int scoreRight = levelRight - unit * 2;
+        int headerY = table.y + 42;
+        int headerH = Math.max(18, unit);
+        int innerLeft = table.x + padX;
+        int innerRight = table.x + table.width - padX;
+        int rankX = innerLeft + 18;
+        int rankW = Math.max(30, unit * 2);
+        int nameX = rankX + rankW + Math.max(12, unit * 2 / 3);
+        int levelW = Math.max(36, unit * 2 + 6);
+        int levelX = innerRight - levelW;
+        int scoreW = Math.max(72, unit * 5);
+        int scoreX = levelX - scoreW - Math.max(12, unit * 2 / 3);
+        int nameW = Math.max(32, scoreX - nameX - 8);
 
-        g2.setFont(Theme.font("순위", unit, false));
-        g2.setColor(Theme.DIM_TEXT);
-        tetris.ui.theme.UiKit.drawInBox(g2, "순위", new java.awt.Rectangle(rankX, headerBaseline - unit, unit * 2, unit),
+        g2.setFont(Theme.font("순위", Math.max(12, unit * 4 / 5), false));
+        g2.setColor(new Color(0x9FB0CC));
+        tetris.ui.theme.UiKit.drawInBox(g2, "순위", new java.awt.Rectangle(rankX, headerY, rankW, headerH),
+                tetris.ui.theme.UiKit.Align.CENTER);
+        tetris.ui.theme.UiKit.drawInBox(g2, "이름", new java.awt.Rectangle(nameX, headerY, nameW, headerH),
                 tetris.ui.theme.UiKit.Align.LEFT);
-        tetris.ui.theme.UiKit.drawInBox(g2, "이름", new java.awt.Rectangle(nameX, headerBaseline - unit, unit * 4, unit),
-                tetris.ui.theme.UiKit.Align.LEFT);
-        tetris.ui.theme.UiKit.drawInBox(g2, "점수", new java.awt.Rectangle(scoreRight - unit * 3, headerBaseline - unit, unit * 3, unit),
+        tetris.ui.theme.UiKit.drawInBox(g2, "점수", new java.awt.Rectangle(scoreX, headerY, scoreW, headerH),
                 tetris.ui.theme.UiKit.Align.RIGHT);
-        tetris.ui.theme.UiKit.drawInBox(g2, "레벨", new java.awt.Rectangle(levelRight - unit * 2, headerBaseline - unit, unit * 2, unit),
+        tetris.ui.theme.UiKit.drawInBox(g2, "레벨", new java.awt.Rectangle(levelX, headerY, levelW, headerH),
                 tetris.ui.theme.UiKit.Align.RIGHT);
+        g2.setColor(new Color(61, 224, 255, 65));
+        g2.drawLine(innerLeft, headerY + headerH + 6, innerRight, headerY + headerH + 6);
 
         if (entries.isEmpty()) {
             g2.setFont(Theme.font(Messages.get("scoreboard.empty"), unit, false));
-            Theme.drawCentered(g2, Messages.get("scoreboard.empty"), w / 2, headerBaseline + rowHeight * 3);
+            g2.setColor(new Color(0x9FB0CC));
+            Theme.drawCentered(g2, Messages.get("scoreboard.empty"), w / 2, headerY + headerH + rowHeight * 3);
         }
 
+        int dataFont = Math.max(13, unit * 4 / 5 + 1);
         for (int i = 0; i < entries.size(); i++) {
             ScoreEntry entry = entries.get(i);
             java.awt.Rectangle row = rowBounds(i);
-            int baseline = row.y + row.height - 6;
             if (i == highlightIndex) {
                 g2.setColor(Theme.HIGHLIGHT_ROW);
                 g2.fillRect(row.x, row.y, row.width, row.height);
                 g2.setColor(tetris.ui.theme.UiKit.CYAN);
-                g2.setStroke(new java.awt.BasicStroke(3f));
+                g2.setStroke(new java.awt.BasicStroke(2.5f));
                 g2.drawRect(row.x + 1, row.y + 1, row.width - 3, row.height - 3);
                 g2.setStroke(new java.awt.BasicStroke(1f));
             }
-            if (i < 3) drawMedal(g2, rankX - unit, baseline - unit / 2, i);
-            g2.setFont(Theme.font(entry.name(), unit, false));
-            // 강조 행은 배경과 굵은 테두리로 구분하고 글자는 흰색 그대로
-            g2.setColor(Theme.TEXT);
+            if (i < 3) drawMedal(g2, innerLeft, row.y + row.height / 2, i);
+            g2.setFont(tetris.ui.theme.GameTheme.digits(dataFont));
+            g2.setColor(i == 0 ? Theme.ACCENT : Theme.TEXT);
             tetris.ui.theme.UiKit.drawInBox(g2, String.valueOf(i + 1),
-                    new java.awt.Rectangle(rankX, row.y, unit * 2, row.height), tetris.ui.theme.UiKit.Align.RIGHT);
+                    new java.awt.Rectangle(rankX, row.y, rankW, row.height), tetris.ui.theme.UiKit.Align.CENTER);
+            g2.setFont(Theme.font(entry.name(), dataFont, false));
+            g2.setColor(Theme.TEXT);
             tetris.ui.theme.UiKit.drawInBox(g2, entry.name(),
-                    new java.awt.Rectangle(nameX, row.y, Math.max(8, scoreRight - nameX - unit * 4), row.height),
-                    tetris.ui.theme.UiKit.Align.LEFT);
-            g2.setFont(tetris.ui.theme.GameTheme.fontFor(String.valueOf(entry.score()), unit, true));
-            g2.setColor(java.awt.Color.WHITE);
+                    new java.awt.Rectangle(nameX, row.y, nameW, row.height), tetris.ui.theme.UiKit.Align.LEFT);
+            g2.setFont(tetris.ui.theme.GameTheme.fontFor(String.valueOf(entry.score()), dataFont, true));
+            g2.setColor(i == 0 ? Theme.ACCENT : java.awt.Color.WHITE);
             tetris.ui.theme.UiKit.drawInBox(g2, String.valueOf(entry.score()),
-                    new java.awt.Rectangle(scoreRight - unit * 4, row.y, unit * 4, row.height),
-                    tetris.ui.theme.UiKit.Align.RIGHT);
+                    new java.awt.Rectangle(scoreX, row.y, scoreW, row.height), tetris.ui.theme.UiKit.Align.RIGHT);
+            g2.setColor(Theme.TEXT);
             tetris.ui.theme.UiKit.drawInBox(g2, String.valueOf(entry.level()),
-                    new java.awt.Rectangle(levelRight - unit * 2, row.y, unit * 2, row.height),
-                    tetris.ui.theme.UiKit.Align.RIGHT);
+                    new java.awt.Rectangle(levelX, row.y, levelW, row.height), tetris.ui.theme.UiKit.Align.RIGHT);
         }
 
         int bottom = table.y + table.height + unit;
@@ -258,10 +278,12 @@ public class ScoreBoardPanel extends JPanel {
     public java.awt.Rectangle rowBounds(int index) {
         java.awt.Rectangle table = tableBounds();
         int unit = Theme.unit(Math.max(1, getHeight()));
-        int corner = 72;
+        int padX = Math.max(36, unit * 2);
+        int headerY = table.y + 42;
+        int headerH = Math.max(18, unit);
         int rowHeight = unit + unit / 2;
-        int y = table.y + corner + 10 + rowHeight * index;
-        return new java.awt.Rectangle(table.x + corner / 2, y, table.width - corner, rowHeight - 4);
+        int y = headerY + headerH + 12 + rowHeight * index;
+        return new java.awt.Rectangle(table.x + padX, y, Math.max(32, table.width - padX * 2), rowHeight - 4);
     }
 
 
@@ -271,16 +293,17 @@ public class ScoreBoardPanel extends JPanel {
         return new java.awt.Point(row.x + 8, row.y + row.height / 2);
     }
 
-    private static void drawMedal(Graphics2D g, int x, int y, int rank) {
+    private static void drawMedal(Graphics2D g, int x, int centerY, int rank) {
         Color color = switch (rank) {
             case 0 -> new Color(0xF6C945);
             case 1 -> new Color(0xD7DEE8);
             default -> new Color(0xE0A36A);
         };
         g.setColor(color);
-        g.fillOval(x, y - 8, 14, 14);
+        g.fillOval(x, centerY - 7, 14, 14);
         g.setColor(new Color(0x1B1E24));
         g.setFont(tetris.ui.theme.GameTheme.fontFor(String.valueOf(rank + 1), 10, true));
-        g.drawString(String.valueOf(rank + 1), x + 4, y + 3);
+        tetris.ui.theme.UiKit.drawInBox(g, String.valueOf(rank + 1), new java.awt.Rectangle(x, centerY - 7, 14, 14),
+                tetris.ui.theme.UiKit.Align.CENTER);
     }
 }
