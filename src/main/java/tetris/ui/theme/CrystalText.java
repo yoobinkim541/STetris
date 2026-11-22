@@ -141,13 +141,14 @@ public final class CrystalText {
                 x += Math.max(1f, advance);
                 continue;
             }
-            float scale = targetH / (float) box.getHeight();
-            float drawn = (float) box.getWidth() * scale;
+            // 대체 글꼴(예: '·', 화살표)은 개별 문자의 높이가 아니라 대체 글꼴 자체의 capHeight 비율로 맞춰
+            // 가운뎃점('·') 같은 작은 문장부호가 글자 높이 전체로 비대해지지 않게 한다.
+            float scale = targetH / capHeight(face, context);
             AffineTransform at = new AffineTransform();
-            at.translate(x - box.getX() * scale, 0);
+            at.translate(x, 0);
             at.scale(scale, scale);
             path.append(at.createTransformedShape(raw), false);
-            x += Math.max(drawn, advance * scale);
+            x += Math.max(1f, advance * scale);
         }
         return path;
     }

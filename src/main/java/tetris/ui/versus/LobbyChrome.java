@@ -188,43 +188,58 @@ public final class LobbyChrome {
         return new Rectangle(box.x + x, box.y + x, Math.max(1, box.width - x * 2), Math.max(1, box.height - x * 2));
     }
     private static void paintListHeader(Graphics2D g, Rectangle glass, int unit) {
-        int cap = Math.max(40, unit + 12);
-        Rectangle band = new Rectangle(glass.x + cap, glass.y + cap / 2 + 8, Math.max(1, glass.width - cap * 2 - 18), Math.max(16, unit - 2));
+        // 방 행(room-0..)의 contentBox와 정확히 같은 가로 축에 열 헤더를 정렬한다
+        int rowH = unit + 12;
+        Rectangle sampleRow = new Rectangle(glass.x + 12, glass.y, glass.width - 24, rowH - 4);
+        Rectangle hole = UiKit.contentBox(UiKit.AssetSlot.BUTTON, sampleRow);
+        int headerY = glass.y + Math.max(22, unit);
+        int headerH = Math.max(16, unit - 2);
+        Rectangle band = new Rectangle(hole.x, headerY, hole.width, headerH);
         g.setFont(GameTheme.text(Math.max(12, unit - 4), false));
-        g.setColor(new Color(0x8EA0BE));
-        UiKit.drawInBox(g, "이름", column(band, 0, 32), UiKit.Align.LEFT);
-        UiKit.drawInBox(g, "모드", column(band, 32, 56), UiKit.Align.LEFT);
-        UiKit.drawInBox(g, "공개", column(band, 56, 82), UiKit.Align.LEFT);
-        UiKit.drawInBox(g, "인원", column(band, 82, 100), UiKit.Align.RIGHT);
+        g.setColor(new Color(0x9BB0CE));
+        UiKit.drawInBox(g, "이름", column(band, 0, 34), UiKit.Align.LEFT);
+        UiKit.drawInBox(g, "모드", column(band, 34, 58), UiKit.Align.LEFT);
+        UiKit.drawInBox(g, "공개", column(band, 58, 84), UiKit.Align.CENTER);
+        UiKit.drawInBox(g, "인원", column(band, 84, 100), UiKit.Align.RIGHT);
+        g.setColor(new Color(61, 224, 255, 65));
+        g.drawLine(hole.x, headerY + headerH + 4, hole.x + hole.width, headerY + headerH + 4);
     }
 
     private static Rectangle column(Rectangle band, int startPercent, int endPercent) {
         int x = band.x + band.width * startPercent / 100;
         int end = band.x + band.width * endPercent / 100;
-        return new Rectangle(x, band.y, Math.max(1, end - x - 8), band.height);
+        return new Rectangle(x, band.y, Math.max(1, end - x - 6), band.height);
     }
 
     private static void paintWaitingCard(Graphics2D g, View view, Rectangle glass, int unit) {
-        int cap = Math.max(24, unit);
+        int cap = Math.max(26, unit + 6);
         int innerW = Math.max(1, glass.width - cap * 2);
         int y = glass.y + cap;
-        g.setFont(GameTheme.text(Math.max(18, unit), true));
+        g.setFont(GameTheme.text(Math.max(17, unit), true));
         g.setColor(Color.WHITE);
         UiKit.drawInBox(g, view.roomTitle() == null || view.roomTitle().isEmpty() ? "인터넷 방" : view.roomTitle(),
-                new Rectangle(glass.x + cap, y, innerW, unit + 8), UiKit.Align.CENTER);
-        y += unit + 10;
-        g.setFont(GameTheme.digits(Math.max(32, unit + 10)));
-        g.setColor(UiKit.CYAN);
+                new Rectangle(glass.x + cap, y, innerW, unit + 6), UiKit.Align.CENTER);
+        y += unit + 12;
+        int codeH = unit + 20;
+        int codeW = Math.min(innerW, Math.max(200, innerW * 4 / 5));
+        int codeX = glass.x + (glass.width - codeW) / 2;
+        g.setColor(new Color(10, 14, 34, 220));
+        g.fillRoundRect(codeX, y, codeW, codeH, 12, 12);
+        g.setColor(new Color(255, 201, 77, 175));
+        g.drawRoundRect(codeX, y, codeW - 1, codeH - 1, 12, 12);
+        g.setFont(GameTheme.digits(Math.max(28, unit + 10)));
+        g.setColor(new Color(0xFFC94D));
         UiKit.drawInBox(g, view.roomCode() == null ? "……" : view.roomCode(),
-                new Rectangle(glass.x + cap, y, innerW, unit + 16), UiKit.Align.CENTER);
-        y += unit + 18;
-        g.setFont(GameTheme.text(Math.max(14, unit - 2), false));
-        g.setColor(new Color(0xE8E8E8));
+                new Rectangle(codeX + 10, y, codeW - 20, codeH), UiKit.Align.CENTER);
+        y += codeH + 10;
+        g.setFont(GameTheme.text(Math.max(13, unit - 3), false));
+        g.setColor(new Color(0xE8EEF8));
         UiKit.drawInBox(g, view.peerLine() == null ? "" : view.peerLine(),
-                new Rectangle(glass.x + cap, y, innerW, unit + 4), UiKit.Align.CENTER);
-        y += unit + 6;
+                new Rectangle(glass.x + cap, y, innerW, unit + 2), UiKit.Align.CENTER);
+        y += unit + 4;
+        g.setColor(new Color(0x8CFFC1));
         UiKit.drawInBox(g, view.readyLine() == null ? "" : view.readyLine(),
-                new Rectangle(glass.x + cap, y, innerW, unit + 4), UiKit.Align.CENTER);
+                new Rectangle(glass.x + cap, y, innerW, unit + 2), UiKit.Align.CENTER);
     }
 
     private static void addTabs(List<Hit> hits, int contentX, int contentW, int top, int height, int unit, Page page) {
@@ -335,10 +350,11 @@ public final class LobbyChrome {
             boolean internet = hit.id().equals("tab-net");
             boolean on = (internet && view.page() != Page.LAN) || (!internet && view.page() == Page.LAN);
             UiKit.paintButton(g, on || selected, box.x, box.y, box.width, box.height, false, UiKit.pulse());
-            g.setFont(GameTheme.text(Math.max(14, unit - 1), on || selected));
-            g.setColor(Color.WHITE);
-            UiKit.drawInAsset(g, UiKit.AssetSlot.BUTTON, box, internet ? "인터넷 방 목록" : "같은 LAN",
-                    UiKit.Align.CENTER, on || selected);
+            int capPad = Math.max(24, Math.min(36, box.width / 6));
+            Rectangle inner = new Rectangle(box.x + capPad, box.y + 3, Math.max(20, box.width - capPad * 2), Math.max(12, box.height - 6));
+            String label = internet ? "인터넷 방 목록" : "같은 LAN";
+            g.setFont(GameTheme.text(Math.max(13, unit - 3), on || selected));
+            drawShadowedInBox(g, label, inner, Color.WHITE);
             return;
         }
         if (hit.id().startsWith("room-")) {
@@ -347,23 +363,30 @@ public final class LobbyChrome {
             RoomRow room = view.rooms().get(index);
             UiKit.paintButton(g, selected, box.x, box.y, box.width, box.height, false, UiKit.pulse());
             Rectangle hole = UiKit.contentBox(UiKit.AssetSlot.BUTTON, box);
-            g.setFont(GameTheme.text(Math.max(13, unit - 2), selected));
+            g.setFont(GameTheme.text(Math.max(13, unit - 3), selected));
             g.setColor(Color.WHITE);
-            UiKit.drawInBox(g, room.name(), column(hole, 0, 32), UiKit.Align.LEFT);
+            UiKit.drawInBox(g, room.name(), column(hole, 0, 34), UiKit.Align.LEFT);
             g.setColor(new Color(0xC9D4E8));
-            UiKit.drawInBox(g, room.modeLabel(), column(hole, 32, 56), UiKit.Align.LEFT);
+            UiKit.drawInBox(g, room.modeLabel(), column(hole, 34, 58), UiKit.Align.LEFT);
             g.setColor(room.privateRoom() ? UiKit.MAGENTA : UiKit.CYAN);
-            UiKit.drawIconText(g, column(hole, 56, 82), room.privateRoom() ? "◆" : "◇", room.privateRoom() ? "비공개" : "공개");
-            g.setFont(GameTheme.digits(Math.max(13, unit - 2)));
+            UiKit.drawIconText(g, column(hole, 58, 84), room.privateRoom() ? "◆" : "◇", room.privateRoom() ? "비공개" : "공개");
+            g.setFont(GameTheme.digits(Math.max(13, unit - 3)));
             g.setColor(UiKit.CYAN);
-            UiKit.drawInBox(g, room.players() + "/2", column(hole, 82, 100), UiKit.Align.RIGHT);
+            UiKit.drawInBox(g, room.players() + "/2", column(hole, 84, 100), UiKit.Align.RIGHT);
             return;
         }
         if (hit.id().startsWith("btn-")) {
             UiKit.paintButton(g, selected, box.x, box.y, box.width, box.height, false, UiKit.pulse());
-            g.setFont(GameTheme.text(Math.max(13, unit - 2), selected));
-            g.setColor(Color.WHITE);
-            UiKit.drawInAsset(g, UiKit.AssetSlot.BUTTON, box, buttonLabel(hit.id(), view), UiKit.Align.CENTER, selected);
+            if (box.width < 160 && !selected) {
+                g.setColor(new Color(6, 10, 24, 155));
+                g.fillRoundRect(box.x + 10, box.y + 4, Math.max(8, box.width - 20), Math.max(8, box.height - 8),
+                        Math.max(8, box.height - 8), Math.max(8, box.height - 8));
+            }
+            int capPad = Math.max(12, Math.min(28, box.width / 7));
+            Rectangle inner = new Rectangle(box.x + capPad, box.y + 3, Math.max(20, box.width - capPad * 2), Math.max(12, box.height - 6));
+            int btnFont = box.width < 130 ? Math.max(12, Math.min(14, unit - 4)) : Math.max(13, unit - 2);
+            g.setFont(GameTheme.text(btnFont, selected));
+            drawShadowedInBox(g, buttonLabel(hit.id(), view), inner, Color.WHITE);
             return;
         }
         UiKit.paintGlassCapsule(g, box.x, box.y, box.width, box.height);
@@ -371,13 +394,13 @@ public final class LobbyChrome {
                 : GameTheme.text(Math.max(14, unit - 1), false));
         g.setColor(Color.WHITE);
         String value = fieldText(hit.id(), view);
-        Rectangle hole = UiKit.contentBox(UiKit.AssetSlot.NAME, box);
+        Rectangle hole = new Rectangle(box.x + 18, box.y + 3, Math.max(24, box.width - 36), Math.max(12, box.height - 6));
         if (hit.id().equals("vis") || hit.id().equals("mode") || hit.id().equals("recent") || hit.id().equals("wait-mode")) {
-            UiKit.drawInBox(g, "◀", new Rectangle(hole.x, hole.y, 22, hole.height), UiKit.Align.CENTER);
-            UiKit.drawInBox(g, value, new Rectangle(hole.x + 24, hole.y, Math.max(1, hole.width - 48), hole.height), UiKit.Align.CENTER);
-            UiKit.drawInBox(g, "▶", new Rectangle(hole.x + hole.width - 22, hole.y, 22, hole.height), UiKit.Align.CENTER);
+            UiKit.drawInBox(g, "◀", new Rectangle(hole.x, hole.y, 24, hole.height), UiKit.Align.CENTER);
+            UiKit.drawInBox(g, value, new Rectangle(hole.x + 26, hole.y, Math.max(1, hole.width - 52), hole.height), UiKit.Align.CENTER);
+            UiKit.drawInBox(g, "▶", new Rectangle(hole.x + hole.width - 24, hole.y, 24, hole.height), UiKit.Align.CENTER);
         } else {
-            UiKit.drawInAsset(g, UiKit.AssetSlot.NAME, box, value.isEmpty() ? placeholder(hit.id()) : value, UiKit.Align.CENTER);
+            UiKit.drawInBox(g, value.isEmpty() ? placeholder(hit.id()) : value, hole, UiKit.Align.CENTER);
         }
     }
 
@@ -436,6 +459,13 @@ public final class LobbyChrome {
 
     public static String modeLabel(RelayRoomMode mode) {
         return mode == null ? RelayRoomMode.CLASSIC.label() : mode.label();
+    }
+
+    private static void drawShadowedInBox(Graphics2D g, String text, Rectangle inner, Color color) {
+        g.setColor(new Color(4, 8, 22, 220));
+        UiKit.drawInBox(g, text, new Rectangle(inner.x + 1, inner.y + 1, inner.width, inner.height), UiKit.Align.CENTER);
+        g.setColor(color);
+        UiKit.drawInBox(g, text, inner, UiKit.Align.CENTER);
     }
 
     private static int baseline(Graphics2D g, Rectangle box) {

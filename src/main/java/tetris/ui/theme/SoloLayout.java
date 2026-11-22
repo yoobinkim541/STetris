@@ -45,35 +45,46 @@ public final class SoloLayout {
 
     public static SoloLayout of(int cell) {
         int safe = Math.max(1, cell);
-        int frame = GameTheme.snap8(Math.max(16, safe / 2));
+        int frame = GameTheme.snap8(Math.max(12, safe / 2));
         int gap = 8;
         int side = GameTheme.snap8(safe * 5 + frame);
-        int crownH = GameTheme.snap8(Math.max(56, safe * 2));
-        int labelH = 16;
-        int hud = GameTheme.snap8(Math.max(40, safe + 8));
-        int guideH = GameTheme.snap8(Math.max(32, safe));
+        int crownH = GameTheme.snap8(Math.max(48, safe * 2));
+        int bottomGap = 16;
+        int guideH = GameTheme.snap8(Math.max(40, safe + 24));
         int width = side * 2 + safe * Board.WIDTH;
-        int height = crownH + safe * Board.HEIGHT + labelH + hud + guideH;
+        int height = crownH + safe * Board.HEIGHT + bottomGap + guideH;
         Rectangle board = new Rectangle(side, crownH, safe * Board.WIDTH, safe * Board.HEIGHT);
         Rectangle crown = new Rectangle(board.x, 0, board.width, board.y);
         int tabW = Math.max(8, side - frame - gap);
-        Rectangle hold = new Rectangle(gap, board.y, tabW, GameTheme.snap8(safe * 5));
-        Rectangle next = new Rectangle(board.x + board.width + frame, board.y, tabW, GameTheme.snap8(safe * 8));
-        int effectsTop = hold.y + hold.height + gap;
+        int labelH = Math.max(14, Math.min(20, safe * 2 / 3));
+
+        // 좌측 칼럼: 홀드 탭 + 모드 캡슐 + 지속 효과 / 플레이 상태 카드
+        Rectangle hold = new Rectangle(gap, board.y + labelH, tabW, GameTheme.snap8(safe * 4));
+        int statusH = Math.max(22, Math.min(34, safe + 4));
+        int statusY = hold.y + hold.height + labelH + 6;
+        Rectangle status = new Rectangle(gap, statusY, tabW, statusH);
+        int effectsTop = status.y + status.height + 10;
         int effectsBottom = board.y + board.height;
-        Rectangle effects = new Rectangle(gap, effectsTop, tabW, Math.max(safe, effectsBottom - effectsTop));
-        int inner = width - gap * 5;
-        int scoreW = GameTheme.snap8(Math.max(safe * 6, inner * 2 / 5));
-        int other = Math.max(8, (inner - scoreW) / 3);
-        int tabY = board.y + board.height + labelH;
-        Rectangle score = new Rectangle(gap, tabY, scoreW, hud);
-        Rectangle level = new Rectangle(gap * 2 + scoreW, tabY, other, hud);
-        Rectangle lines = new Rectangle(gap * 3 + scoreW + other, tabY, other, hud);
-        int timeX = gap * 4 + scoreW + other * 2;
-        Rectangle time = new Rectangle(timeX, tabY, Math.max(8, width - gap - timeX), hud);
-        Rectangle guide = new Rectangle(gap, height - guideH, width - gap * 2, Math.max(8, guideH - 8));
-        int statusTop = next.y + next.height + gap;
-        Rectangle status = new Rectangle(next.x, statusTop, tabW, Math.max(24, tabY - statusTop - 8));
+        Rectangle effects = new Rectangle(gap, effectsTop, tabW, Math.max(safe * 2, effectsBottom - effectsTop));
+
+        // 우측 칼럼: 다음 탭 + 스탯 4캡슐 (레벨 / 점수 / 줄 / 시간)
+        int rightX = board.x + board.width + frame;
+        Rectangle next = new Rectangle(rightX, board.y + labelH, tabW, GameTheme.snap8(safe * 7));
+        int statTop = next.y + next.height + 10;
+        int statAvail = Math.max(64, (board.y + board.height) - statTop);
+        int slotH = statAvail / 4;
+        int statLabelH = Math.max(10, Math.min(14, slotH / 4));
+        int capGap = 3;
+        int capH = Math.max(16, Math.min(40, slotH - statLabelH - capGap - 4));
+        int y0 = statTop + statLabelH + capGap;
+        Rectangle level = new Rectangle(rightX, y0, tabW, capH);
+        Rectangle score = new Rectangle(rightX, y0 + slotH, tabW, capH);
+        Rectangle lines = new Rectangle(rightX, y0 + slotH * 2, tabW, capH);
+        Rectangle time = new Rectangle(rightX, y0 + slotH * 3, tabW, capH);
+
+        // 하단 통합 조작키 바 (양쪽 모서리 16px는 밤하늘 유지)
+        Rectangle guide = new Rectangle(16, board.y + board.height + bottomGap,
+                Math.max(16, width - 32), Math.max(24, guideH - 8));
         return new SoloLayout(safe, width, height, board, crown, hold, next, effects, guide, score, level, lines, time, status);
     }
 

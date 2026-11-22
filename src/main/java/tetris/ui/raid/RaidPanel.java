@@ -363,7 +363,9 @@ public final class RaidPanel extends JPanel {
         int width = getWidth();
         int height = getHeight();
         var boss = snapshot.boss();
+        var boss2 = snapshot.mode() == RaidMode.RACE ? snapshot.bossFor(1) : null;
         long key = (((long) width) << 32) ^ height ^ boss.id().ordinal() ^ (boss.level() << 8)
+                ^ (boss2 == null ? 0L : (((long) boss2.id().ordinal() << 24) ^ ((long) boss2.level() << 28)))
                 ^ (snapshot.mode().ordinal() << 16) ^ scene.boss.width ^ (scene.frame[0].width << 12) ^ scene.frame[0].y;
         if (plate != null && plateStamp == key && plate.getWidth() == width && plate.getHeight() == height) return;
         plate = new BufferedImage(Math.max(1, width), Math.max(1, height), BufferedImage.TYPE_INT_RGB);
@@ -391,9 +393,6 @@ public final class RaidPanel extends JPanel {
         } else {
             drawLedge(g, snapshot.boss(), scene.boss, false);
             paintHpArt(g);
-            if (scene.banner.width > 0) {
-                UiKit.paintBanner(g, scene.banner.x, scene.banner.y, scene.banner.width, scene.banner.height);
-            }
         }
         for (int i = 0; i < scene.players; i++) {
             Rectangle frame = scene.frame[i];
@@ -426,11 +425,36 @@ public final class RaidPanel extends JPanel {
     }
 
     private void paintRaceLive(Graphics2D g, int index) {
-        Rectangle hp = scene.raceArt[index];
+        Rectangle ped = scene.racePedestal[index];
         var boss = snapshot.bossFor(index);
-        if (hp.width <= 0 || boss == null) return;
-        UiKit.paintGauge(g, hp.x, hp.y + Math.max(0, hp.height - 8), Math.max(8, hp.width), 8,
+        if (ped.width <= 0 || boss == null) return;
+        Color accent = indexColor(index);
+        g.setColor(new Color(8, 12, 28, 228));
+        g.fillRoundRect(ped.x, ped.y, ped.width, ped.height, 10, 10);
+        g.setStroke(new BasicStroke(1.5f));
+        g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 190));
+        g.drawRoundRect(ped.x, ped.y, ped.width - 1, ped.height - 1, 10, 10);
+        g.setStroke(new BasicStroke(1f));
+
+        String bossLabel = boss.id().displayName() + " Lv." + boss.level();
+        int pct = (int) Math.round(100.0 * boss.hp() / Math.max(1, boss.maxHp()));
+        g.setFont(GameTheme.fontFor(bossLabel, 12, false));
+        g.setColor(TEXT);
+        UiKit.drawInBox(g, bossLabel, new Rectangle(ped.x + 8, ped.y + 4, ped.width - 54, 16), UiKit.Align.LEFT);
+        g.setFont(GameTheme.digits(12));
+        g.setColor(accent);
+        UiKit.drawInBox(g, pct + "%", new Rectangle(ped.x + ped.width - 48, ped.y + 4, 40, 16), UiKit.Align.RIGHT);
+
+        UiKit.paintGauge(g, ped.x + 8, ped.y + 23, Math.max(8, ped.width - 16), 10,
                 boss.hp() / (float) Math.max(1, boss.maxHp()), A11yColors.hp(colorBlind));
+
+        PatternId pattern = boss.nextPattern();
+        String pText = pattern == null ? "패턴 없음" : pattern.displayName() + " · " + Math.max(0, boss.piecesLeft()) + "조각";
+        g.setFont(GameTheme.fontFor(pText, 11, false));
+        g.setColor(DIM);
+        UiKit.drawInBox(g, pText, new Rectangle(ped.x + 8, ped.y + 37, ped.width - 16, 16), UiKit.Align.CENTER);
+
+        paintUltHud(g, scene.raceGauge[index], snapshot.gaugeFor(index), accent);
     }
 
     @Override
@@ -478,8 +502,8 @@ public final class RaidPanel extends JPanel {
         boolean covered = snapshot.phase() == RaidPhase.FINISHED && snapshot.result() != null;
         if (!covered) {
             paintHpFill(g, snapshot.boss());
-            paintThinGauge(g, scene.gauge, snapshot.gauge());
             paintTelegraph(g, snapshot.boss());
+            paintUltHud(g, scene.gauge, snapshot.gauge(), A11yColors.gauge(colorBlind));
         }
         for (int i = 0; i < scene.players; i++) paintPlayer(g, snapshot.players().get(i), i);
         if (!covered) paintTopCapsules(g, snapshot.boss());
@@ -499,114 +523,176 @@ public final class RaidPanel extends JPanel {
             return;
         }
         boolean solo = snapshot.mode() == RaidMode.SOLO;
-        placeCapsules(2, 24);
-        int band = VH * 26 / 100;
+        placeCapsules(4, 26);
+        int band = 150;
         int ledgeY = scene.kill.y + scene.kill.height + 2;
-        int ledgeW = Math.min(VW * 92 / 100, band * 1680 / 720);
+        int ledgeW = Math.min(VW * 90 / 100, band * 1680 / 720);
         scene.boss.setBounds((VW - ledgeW) / 2, ledgeY, ledgeW, band);
-        int hpW = VW - 48;
+        int hpW = 540;
         BufferedImage hp = assets.hpFrame(hpW);
         int hpH = hp == null ? 44 : hp.getHeight();
         int hpDrawW = hp == null ? hpW : hp.getWidth();
-        int hpY = ledgeY + band - hpH + 8;
+        int hpY = ledgeY + band - hpH + 22;
         scene.hp.setBounds((VW - hpDrawW) / 2, hpY, hpDrawW, hpH);
-        int bannerW = VW * 70 / 100;
-        int bannerH = 36;
-        scene.banner.setBounds((VW - bannerW) / 2, ledgeY + band - bannerH - 2, bannerW, bannerH);
-        scene.gauge.setBounds(scene.hp.x + 36, scene.hp.y + 8, Math.max(40, scene.hp.width - 72), 4);
-        int frameTop = ledgeY + band - 6;
-        hugBoards(frameTop, VH - guideReserve(), solo);
+        int bannerW = 456;
+        int bannerH = 28;
+        int bannerY = hpY + hpH - 4;
+        scene.banner.setBounds((VW - bannerW) / 2, bannerY, bannerW, bannerH);
         scene.level.setBounds(0, 0, 0, 0);
         scene.raceArt[0].setBounds(0, 0, 0, 0);
         scene.raceArt[1].setBounds(0, 0, 0, 0);
+        scene.racePedestal[0].setBounds(0, 0, 0, 0);
+        scene.racePedestal[1].setBounds(0, 0, 0, 0);
+        scene.raceGauge[0].setBounds(0, 0, 0, 0);
+        scene.raceGauge[1].setBounds(0, 0, 0, 0);
+        hugBoards(bannerY + bannerH + 14, VH - guideReserve(), solo);
+        if (solo) {
+            int gx = scene.next[0].x;
+            int gw = scene.next[0].width;
+            int gy = scene.next[0].y + scene.next[0].height + 22;
+            scene.gauge.setBounds(gx, gy, gw, 56);
+        } else {
+            int gy = scene.frame[0].y + scene.frame[0].height + 8;
+            scene.gauge.setBounds(150, gy, 300, 26);
+        }
         placeGuide();
     }
 
     private void composeRace() {
-        placeCapsules(2, 24);
-        scene.kill.setBounds(118, 2, 210, 24);
-        scene.timer.setBounds(336, 2, 140, 24);
-        scene.name.setBounds(scene.kill);
-        int margin = 8;
-        int gap = 10;
-        int colW = (VW - margin * 2 - gap) / 2;
-        int strip = 96;
-        int top = 30;
+        scene.kill.setBounds(76, 4, 240, 26);
+        scene.timer.setBounds(328, 4, 196, 26);
+        scene.name.setBounds(0, 0, 0, 0);
+        int frameW = 208;
+        int leftX = 12;
+        int rightX = VW - 12 - frameW;
+        int artTop = 34;
+        int artH = 108;
+        int pedH = 58;
         scene.players = 2;
+        int[] xs = {leftX, rightX};
         for (int i = 0; i < 2; i++) {
-            int x = margin + i * (colW + gap);
-            scene.raceArt[i].setBounds(x + 4, top, colW - 8, strip);
-            scene.header[i].setBounds(x + 8, top + strip - 4, colW - 16, 28);
+            scene.raceArt[i].setBounds(xs[i], artTop, frameW, artH);
+            scene.racePedestal[i].setBounds(xs[i], artTop + artH - 4, frameW, pedH);
         }
         scene.boss.setBounds(scene.raceArt[0]);
         scene.hp.setBounds(0, 0, 0, 0);
         scene.banner.setBounds(0, 0, 0, 0);
         scene.gauge.setBounds(0, 0, 0, 0);
         scene.level.setBounds(0, 0, 0, 0);
-        hugBoards(top + strip + 28, VH - guideReserve(), false);
+        int frameTop = artTop + artH + pedH + 18;
+        hugBoards(frameTop, VH - guideReserve(), false);
+        for (int i = 0; i < 2; i++) {
+            Rectangle f = scene.frame[i];
+            scene.raceGauge[i].setBounds(f.x, f.y + f.height + 8, f.width, 26);
+        }
         placeGuide();
     }
 
-    /** 틀은 화면 폭의 약 47%. 보드는 틀 안, 정보 기둥은 가운데 쪽에 둔다 */
+    /** 보드를 화려한 틀의 정중앙(4면 균등 여백)에 맞추고, 사이드 정보는 별도 칼럼으로 분리한다 */
     private void hugBoards(int frameTop, int frameBottom, boolean solo) {
-        int rail = RaidArt.DATA.rail(0);
-        int pad = 3;
         int columns = solo ? 1 : Math.min(2, snapshot.players().size());
         scene.players = columns;
-        int frameW = solo ? VW * 64 / 100 : VW * 47 / 100;
-        int frameH = Math.max(120, frameBottom - frameTop);
-        int infoW = 48;
-        int innerW = frameW - rail * 2 - pad * 2 - infoW;
-        int innerH = frameH - rail * 2 - pad * 2;
-        int cell = Math.max(8, Math.min(Math.max(80, innerW) / 10, Math.max(80, innerH) / 20));
-        scene.cell = cell;
+        int margin = 14;
+        if (solo) {
+            int cell = 20;
+            int boardW = cell * 10;
+            int boardH = cell * 20;
+            int frameW = boardW + margin * 2;
+            int frameH = boardH + margin * 2;
+            int availH = Math.max(frameH, frameBottom - frameTop);
+            if (frameH > availH) {
+                cell = Math.max(12, (availH - margin * 2) / 20);
+                boardW = cell * 10;
+                boardH = cell * 20;
+                frameW = boardW + margin * 2;
+                frameH = boardH + margin * 2;
+            }
+            scene.cell = cell;
+            int frameX = (VW - frameW) / 2;
+            int frameY = frameTop;
+            scene.frame[0].setBounds(frameX, frameY, frameW, frameH);
+            scene.play[0].setBounds(frameX + margin, frameY + margin, boardW, boardH);
+            scene.header[0].setBounds(frameX, frameY - 14, 134, 30);
+
+            int sideW = Math.max(96, frameX - 28);
+            int leftX = 16;
+            int rightX = frameX + frameW + 12;
+            int colTop = frameY + 18;
+            scene.hold[0].setBounds(leftX, colTop, sideW, 74);
+            scene.score[0].setBounds(leftX, frameY + frameH - 48, sideW, 44);
+            scene.effects[0].setBounds(leftX, colTop + 98, sideW, Math.max(48, scene.score[0].y - (colTop + 98) - 22));
+            scene.next[0].setBounds(rightX, colTop, sideW, 206);
+            clearPlayer(1);
+            scene.boardY = scene.play[0].y;
+            return;
+        }
+
+        int cell = 18;
         int boardW = cell * 10;
         int boardH = cell * 20;
-        int gap = Math.max(6, VW - frameW * columns - 8);
-        int left = (VW - (frameW * columns + gap * Math.max(0, columns - 1))) / 2;
+        int frameW = boardW + margin * 2;
+        int frameH = boardH + margin * 2;
+        int maxFrameH = Math.max(240, frameBottom - frameTop - 36);
+        if (frameH > maxFrameH) {
+            cell = Math.max(12, (maxFrameH - margin * 2) / 20);
+            boardW = cell * 10;
+            boardH = cell * 20;
+            frameW = boardW + margin * 2;
+            frameH = boardH + margin * 2;
+        }
+        scene.cell = cell;
+        int leftFrameX = 12;
+        int rightFrameX = VW - 12 - frameW;
+        int[] frameXs = {leftFrameX, rightFrameX};
+        int centerLeft = leftFrameX + frameW + 8;
+        int centerRight = rightFrameX - 8;
+        int colGap = 6;
+        int infoW = Math.max(48, (centerRight - centerLeft - colGap) / 2);
+        int[] infoXs = {centerLeft, centerLeft + infoW + colGap};
+
         for (int i = 0; i < 2; i++) {
             if (i >= columns) {
                 clearPlayer(i);
-                scene.header[i].setBounds(0, 0, 0, 0);
                 continue;
             }
-            int frameX = left + i * (frameW + gap);
+            int frameX = frameXs[i];
             int frameY = frameTop;
             scene.frame[i].setBounds(frameX, frameY, frameW, frameH);
-            boolean infoRight = solo || i == 0;
-            int playX = frameX + rail + pad + (infoRight ? 0 : infoW);
-            int playY = frameY + rail + pad;
-            if (playY + boardH > frameY + frameH - rail) playY = frameY + frameH - rail - boardH;
-            scene.play[i].setBounds(playX, playY, boardW, boardH);
-            int colX = infoRight ? playX + boardW + pad : frameX + rail + pad;
-            layoutColumn(i, colX, playY, infoW, boardH);
-            int tabW = Math.min(148, frameW * 52 / 100);
-            int tabH = 34;
-            int tabX = i == 0 ? frameX - 2 : frameX + 8;
-            scene.header[i].setBounds(tabX, frameY - tabH / 3, tabW, tabH);
+            scene.play[i].setBounds(frameX + margin, frameY + margin, boardW, boardH);
+            int tabW = 132;
+            int tabH = 30;
+            int tabX = i == 0 ? frameX : frameX + frameW - tabW;
+            scene.header[i].setBounds(tabX, frameY - 14, tabW, tabH);
+            layoutColumn(i, infoXs[i], frameY, infoW, frameH);
         }
         scene.boardY = scene.play[0].y;
     }
 
     private void layoutColumn(int index, int x, int y, int width, int height) {
-        int holdH = 30;
-        int nextH = Math.min(96, Math.max(64, height - 110));
-        scene.hold[index].setBounds(x, y, width, holdH);
-        scene.next[index].setBounds(x, y + holdH + 3, width, nextH);
-        int effectY = y + holdH + nextH + 6;
-        int scoreH = 26;
-        scene.score[index].setBounds(x, y + height - scoreH, width, scoreH);
-        scene.effects[index].setBounds(x, effectY, width, Math.max(16, scene.score[index].y - effectY - 4));
+        int labelH = 14;
+        int holdY = y + labelH + 2;
+        int holdH = 46;
+        int nextY = holdY + holdH + labelH + 6;
+        int nextH = Math.min(144, Math.max(96, height - 196));
+        int scoreH = 30;
+        int scoreY = y + height - scoreH;
+        int effectY = nextY + nextH + labelH + 6;
+        int effectH = Math.max(24, scoreY - effectY - labelH - 6);
+        scene.hold[index].setBounds(x, holdY, width, holdH);
+        scene.next[index].setBounds(x, nextY, width, nextH);
+        scene.effects[index].setBounds(x, effectY, width, effectH);
+        scene.score[index].setBounds(x, scoreY, width, scoreH);
     }
 
     private void placeCapsules(int y, int height) {
-        int w = 108;
+        int sideW = 148;
+        int midW = 208;
         int gap = 8;
-        int row = w * 3 + gap * 2;
+        int row = sideW * 2 + midW + gap * 2;
         int x = (VW - row) / 2;
-        scene.kill.setBounds(x, y, w, height);
-        scene.name.setBounds(x + w + gap, y, w, height);
-        scene.timer.setBounds(x + (w + gap) * 2, y, w, height);
+        scene.kill.setBounds(x, y, sideW, height);
+        scene.name.setBounds(x + sideW + gap, y, midW, height);
+        scene.timer.setBounds(x + sideW + gap + midW + gap, y, sideW, height);
     }
 
     private int guideReserve() {
@@ -683,23 +769,28 @@ public final class RaidPanel extends JPanel {
 
     private void paintNameTab(Graphics2D g, RaidSnapshot.PlayerView player, int index) {
         Rectangle tab = scene.header[index];
-        if (tab.width > 0 && snapshot.mode() != RaidMode.RACE) {
+        if (tab.width > 0) {
             String mark = (colorBlind ? (index == 0 ? "■ " : "● ") : "") + (index == 0 ? "P1" : "P2");
-            g.setFont(GameTheme.display(Math.max(13, Math.min(18, tab.height * 2 / 3))));
+            g.setFont(GameTheme.display(Math.max(13, Math.min(17, tab.height * 3 / 5))));
             g.setColor(index == 0 ? UiKit.CYAN : UiKit.MAGENTA);
-            UiKit.drawInAsset(g, UiKit.AssetSlot.NAME, tab, mark, UiKit.Align.CENTER);
+            Rectangle hole = UiKit.contentBox(UiKit.AssetSlot.NAME, tab, index);
+            UiKit.drawInBox(g, mark, hole, UiKit.Align.CENTER);
         }
         Rectangle score = scene.score[index];
         if (score.width <= 0) return;
+        paintMiniLabel(g, "점수", score);
+        paintMiniSlot(g, score, index == 0);
         String digits = String.valueOf(player.board().score());
-        g.setFont(GameTheme.digits(Math.max(11, Math.min(16, score.height - 2))));
+        g.setFont(GameTheme.digits(Math.max(11, Math.min(18, score.height * 3 / 5))));
         g.setColor(TEXT);
-        UiKit.drawInBox(g, digits, score, UiKit.Align.CENTER);
+        UiKit.drawInBox(g, digits, new Rectangle(score.x + 4, score.y + 2, Math.max(4, score.width - 8), Math.max(4, score.height - 4)), UiKit.Align.CENTER);
         if (index == 0) mark(cueScore, score.x + 1, score.y + 1, Math.max(1, score.width - 2), Math.max(1, score.height - 2));
     }
 
     private void paintSide(Graphics2D g, RaidSnapshot.PlayerView player, int index) {
         boolean sealed = player.effects().stream().anyMatch(effect -> effect.pattern() == PatternId.SEAL_PREVIEW);
+        paintMiniLabel(g, "홀드", scene.hold[index]);
+        paintMiniLabel(g, "다음", scene.next[index]);
         paintMiniSlot(g, scene.hold[index], index == 0);
         paintMiniSlot(g, scene.next[index], index == 0);
         Rectangle hold = scene.hold[index];
@@ -714,7 +805,7 @@ public final class RaidPanel extends JPanel {
         if (player.board().previews().isEmpty()) shapes.add(player.board().next());
         else shapes.addAll(player.board().previews());
         shapes.addAll(player.extendedPreviews());
-        Rectangle slot = new Rectangle(next.x + 1, next.y + 1, Math.max(1, next.width - 2), Math.max(1, next.height - 2));
+        Rectangle slot = new Rectangle(next.x + 2, next.y + 2, Math.max(1, next.width - 4), Math.max(1, next.height - 4));
         Rectangle[] pieces = previewSlots(slot, shapes);
         for (int i = 0; i < shapes.size(); i++) {
             Rectangle piece = pieces[i];
@@ -724,11 +815,19 @@ public final class RaidPanel extends JPanel {
         }
     }
 
+    private void paintMiniLabel(Graphics2D g, String label, Rectangle slot) {
+        if (slot.width <= 0) return;
+        g.setFont(GameTheme.text(11, false));
+        g.setColor(DIM);
+        UiKit.drawInBox(g, label, new Rectangle(slot.x, slot.y - 14, slot.width, 13), UiKit.Align.CENTER);
+    }
+
     private void paintMiniSlot(Graphics2D g, Rectangle slot, boolean cyan) {
         if (slot.width <= 0) return;
         g.setColor(NIGHT);
         g.fillRoundRect(slot.x, slot.y, slot.width, slot.height, 8, 8);
-        g.setColor(cyan ? UiKit.CYAN : UiKit.MAGENTA);
+        Color border = cyan ? UiKit.CYAN : UiKit.MAGENTA;
+        g.setColor(new Color(border.getRed(), border.getGreen(), border.getBlue(), 165));
         g.drawRoundRect(slot.x, slot.y, slot.width - 1, slot.height - 1, 8, 8);
     }
 
@@ -821,42 +920,54 @@ public final class RaidPanel extends JPanel {
         Rectangle box = scene.effects[index];
         Rectangle play = scene.play[index];
         if (box.width <= 0 || box.intersects(play)) return;
-        int x = box.x;
+        paintMiniLabel(g, snapshot.mode() == RaidMode.SOLO ? "활성 효과" : "효과", box);
+        g.setColor(new Color(8, 12, 28, 175));
+        g.fillRoundRect(box.x, box.y, box.width, box.height, 8, 8);
+        Color accent = index == 0 ? UiKit.CYAN : UiKit.MAGENTA;
+        g.setColor(new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 95));
+        g.drawRoundRect(box.x, box.y, box.width - 1, box.height - 1, 8, 8);
+
+        int y = box.y + 5;
+        int chipW = Math.max(24, box.width - 8);
+        int chipH = chipW >= 96 ? 20 : 18;
+        boolean wide = chipW >= 96;
         int pending = player.board().pendingRows().size();
-        if (pending > 0 && x + 36 <= box.x + box.width) {
-            paintChip(g, x, box.y, "대기", pending, null, A11yColors.warning(colorBlind));
-            x += 38;
+        if (pending > 0 && y + chipH <= box.y + box.height - 4) {
+            paintChip(g, box.x + 4, y, chipW, chipH, "대기", pending, null, A11yColors.warning(colorBlind), wide);
+            y += chipH + 4;
         }
         for (RaidSnapshot.Effect effect : player.effects()) {
-            if (x + 36 > box.x + box.width) break;
-            String mark = effectMark(effect.pattern());
+            if (y + chipH > box.y + box.height - 4) break;
+            String mark = effectMark(effect.pattern(), wide);
             if (mark == null) continue;
             BufferedImage icon = assets.scaled(AssetStore.patternPath(effect.pattern()), 12, 12);
-            paintChip(g, x, box.y, mark, effect.remainingPieces(), icon, effectColor(effect.pattern()));
-            x += 38;
+            paintChip(g, box.x + 4, y, chipW, chipH, mark, effect.remainingPieces(), icon, effectColor(effect.pattern()), wide);
+            y += chipH + 4;
         }
     }
 
-    private void paintChip(Graphics2D g, int x, int y, String mark, int count, BufferedImage icon, Color color) {
-        g.setColor(NIGHT);
-        g.fillRoundRect(x, y, 48, 14, 7, 7);
-        int textX = x + 2;
+    private void paintChip(Graphics2D g, int x, int y, int w, int h, String mark, int count, BufferedImage icon, Color color, boolean wide) {
+        g.setColor(new Color(14, 20, 44, 224));
+        g.fillRoundRect(x, y, w, h, 6, 6);
+        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 140));
+        g.drawRoundRect(x, y, w - 1, h - 1, 6, 6);
+        int textX = x + 4;
         if (icon != null) {
-            g.drawImage(icon, x + 2, y + 1, null);
-            textX += 14;
+            g.drawImage(icon, x + 4, y + (h - 12) / 2, null);
+            textX += 15;
         }
-        g.setFont(GameTheme.fontFor(colorBlind ? mark : String.valueOf(count), 10, !colorBlind));
+        String label = mark + " " + count;
+        g.setFont(GameTheme.fontFor(label, wide ? 12 : 11, false));
         g.setColor(color);
-        UiKit.drawIconText(g, new Rectangle(textX, y, Math.max(8, x + 46 - textX), 14),
-                colorBlind ? mark : "", String.valueOf(count));
+        UiKit.drawInBox(g, label, new Rectangle(textX, y, Math.max(8, x + w - 4 - textX), h), UiKit.Align.CENTER);
     }
 
-    private String effectMark(PatternId pattern) {
+    private String effectMark(PatternId pattern, boolean wide) {
         return switch (pattern) {
-            case REVERSE -> "반";
-            case OVERLOAD -> "과";
-            case SEAL_PREVIEW -> "봉";
-            case CLOUD -> "구";
+            case REVERSE -> wide ? "반전" : "반";
+            case OVERLOAD -> wide ? "과속" : "과";
+            case SEAL_PREVIEW -> wide ? "봉인" : "봉";
+            case CLOUD -> wide ? "구름" : "구";
             default -> null;
         };
     }
@@ -968,6 +1079,8 @@ public final class RaidPanel extends JPanel {
         int bh = Math.max(6, Math.round(bar.h() * sy));
         float now = boss.hp() / (float) Math.max(1, boss.maxHp());
         float trail = motion.trailRatio(boss.hp(), boss.maxHp());
+        g.setColor(new Color(8, 12, 28, 210));
+        g.fillRoundRect(bx + 2, by + 2, Math.max(4, bw - 4), Math.max(4, bh - 4), 8, 8);
         g.setColor(new Color(255, 255, 255, 90));
         int trailW = Math.round((bw - 6) * Math.max(0f, Math.min(1f, trail)));
         if (trailW > 0) g.fillRoundRect(bx + 3, by + 3, trailW, Math.max(4, bh - 6), 8, 8);
@@ -999,43 +1112,84 @@ public final class RaidPanel extends JPanel {
         }
     }
 
-    private void paintThinGauge(Graphics2D g, Rectangle box, int value) {
-        if (box.width <= 0) return;
-        UiKit.paintGauge(g, box.x, box.y, box.width, Math.max(4, box.height), value / 100f, A11yColors.gauge(colorBlind));
+    private void paintUltHud(Graphics2D g, Rectangle box, int value, Color accent) {
+        if (box.width <= 0 || box.height <= 0) return;
+        int clamped = Math.max(0, Math.min(100, value));
+        boolean ready = clamped >= 100;
+        g.setColor(new Color(8, 12, 28, 218));
+        g.fillRoundRect(box.x, box.y, box.width, box.height, 10, 10);
+        Color border = ready ? new Color(0xFFC94D) : accent;
+        g.setColor(new Color(border.getRed(), border.getGreen(), border.getBlue(), ready ? 225 : 140));
+        g.drawRoundRect(box.x, box.y, box.width - 1, box.height - 1, 10, 10);
+
+        String title = ready ? "필살기 준비!" : "필살기 · 충전 중";
+        String valText = clamped + "/100";
+        if (box.height >= 44) {
+            g.setFont(GameTheme.fontFor(title, 11, false));
+            g.setColor(ready ? new Color(0xFFC94D) : TEXT);
+            UiKit.drawInBox(g, title, new Rectangle(box.x + 8, box.y + 6, box.width - 52, 16), UiKit.Align.LEFT);
+            g.setFont(GameTheme.digits(12));
+            g.setColor(DIM);
+            UiKit.drawInBox(g, valText, new Rectangle(box.x + box.width - 48, box.y + 6, 40, 16), UiKit.Align.RIGHT);
+            UiKit.paintGauge(g, box.x + 8, box.y + box.height - 16, Math.max(8, box.width - 16), 9,
+                    clamped / 100f, border);
+        } else {
+            g.setFont(GameTheme.fontFor(title, 11, false));
+            g.setColor(ready ? new Color(0xFFC94D) : TEXT);
+            UiKit.drawInBox(g, title, new Rectangle(box.x + 8, box.y + 2, box.width - 54, 13), UiKit.Align.LEFT);
+            g.setFont(GameTheme.digits(11));
+            g.setColor(DIM);
+            UiKit.drawInBox(g, valText, new Rectangle(box.x + box.width - 48, box.y + 2, 40, 13), UiKit.Align.RIGHT);
+            UiKit.paintGauge(g, box.x + 8, box.y + box.height - 8, Math.max(8, box.width - 16), 5,
+                    clamped / 100f, border);
+        }
     }
 
     private void paintTelegraph(Graphics2D g, RaidSnapshot.BossView boss) {
         Rectangle box = scene.banner;
         if (box.width <= 0 || boss == null) return;
         boolean hot = motion.telegraphHot(boss.piecesLeft(), boss.fleeMillis());
-        if (hot) {
-            g.setColor(new Color(255, 70, 140, 48));
-            g.fillRoundRect(box.x, box.y, box.width, box.height, 18, 18);
-        }
+        g.setColor(hot ? new Color(76, 14, 42, 232) : new Color(16, 14, 40, 224));
+        g.fillRoundRect(box.x, box.y, box.width, box.height, 14, 14);
+        Color border = hot ? new Color(0xFF4A9E) : new Color(0x9B6BFF);
+        g.setStroke(new BasicStroke(hot ? 1.8f : 1.2f));
+        g.setColor(border);
+        g.drawRoundRect(box.x, box.y, box.width - 1, box.height - 1, 14, 14);
+        g.setStroke(new BasicStroke(1f));
+
         PatternId pattern = boss.nextPattern();
         String name = pattern == null ? "패턴 없음" : pattern.displayName();
         boolean flee = boss.fleeMillis() >= 0;
         int pieces = flee ? (int) Math.max(0, boss.fleeMillis() / 1000) : Math.max(0, boss.piecesLeft());
-        Rectangle inner = UiKit.contentBox(UiKit.AssetSlot.BANNER, box);
-        int podW = Math.min(136, Math.max(72, inner.width / 3));
-        Rectangle pod = new Rectangle(inner.x + inner.width - podW, inner.y, podW, inner.height);
-        UiKit.paintCapsule(g, pod.x, pod.y, pod.width, pod.height);
+        int podW = 128;
+        Rectangle pod = new Rectangle(box.x + box.width - podW - 6, box.y + 3, podW, box.height - 6);
+        g.setColor(new Color(8, 12, 28, 220));
+        g.fillRoundRect(pod.x, pod.y, pod.width, pod.height, 10, 10);
+        g.setColor(new Color(border.getRed(), border.getGreen(), border.getBlue(), 150));
+        g.drawRoundRect(pod.x, pod.y, pod.width - 1, pod.height - 1, 10, 10);
         String detail = targetText(boss.target()) + "  " + pieces + (flee ? "초" : "조각");
-        g.setFont(GameTheme.fontFor(detail, 13, false));
+        g.setFont(GameTheme.fontFor(detail, 12, false));
         g.setColor(TEXT);
-        UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, pod, detail, UiKit.Align.CENTER);
-        int iconW = 22;
+        UiKit.drawInBox(g, detail, pod, UiKit.Align.CENTER);
+
+        Color warnColor = colorBlind ? A11yColors.ORANGE : (hot ? new Color(0xFF4A9E) : new Color(0xFFE27A));
+        g.setColor(new Color(warnColor.getRed(), warnColor.getGreen(), warnColor.getBlue(), 45));
+        g.fillOval(box.x + 8, box.y + (box.height - 20) / 2, 20, 20);
+        g.setColor(warnColor);
+        g.drawOval(box.x + 8, box.y + (box.height - 20) / 2, 19, 19);
+        g.setFont(GameTheme.display(14));
+        UiKit.drawInBox(g, "!", new Rectangle(box.x + 8, box.y, 20, box.height), UiKit.Align.CENTER);
+
         g.setFont(GameTheme.display(16));
-        g.setColor(colorBlind ? A11yColors.ORANGE : new Color(0xFFE27A));
-        UiKit.drawIconText(g, new Rectangle(inner.x, inner.y, iconW, inner.height), "!", "");
-        g.setFont(GameTheme.display(22));
         g.setColor(TEXT);
-        UiKit.drawInAsset(g, UiKit.AssetSlot.BANNER, box, name, UiKit.Align.CENTER, hot);
+        UiKit.drawInBox(g, name, new Rectangle(box.x + 34, box.y, Math.max(40, pod.x - box.x - 40), box.height),
+                UiKit.Align.CENTER);
     }
 
     private void paintTopCapsules(Graphics2D g, RaidSnapshot.BossView boss) {
         paintCapsuleText(g, scene.kill, "처치 " + snapshot.kills(), false);
-        paintCapsuleText(g, scene.name, "Lv." + boss.level(), false);
+        String bossTitle = boss.id().displayName() + " Lv." + boss.level();
+        paintCapsuleText(g, scene.name, bossTitle, false);
         paintCapsuleText(g, scene.timer, clock(snapshot.elapsedMillis()), true);
     }
 
@@ -1056,38 +1210,6 @@ public final class RaidPanel extends JPanel {
         UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, box, right, UiKit.Align.RIGHT);
         long remain = Math.max(0, tetris.feature.raid.RaidRules.RACE_LIMIT_MILLIS - snapshot.elapsedMillis());
         paintCapsuleText(g, scene.timer, clock(remain), true);
-    }
-
-    private void paintRaceHeader(Graphics2D g, int index) {
-        RaidSnapshot.BossView boss = snapshot.bossFor(index);
-        Rectangle art = scene.raceArt[index];
-        Graphics2D layer = (Graphics2D) g.create();
-        try {
-            layer.clipRect(art.x, art.y, art.width, art.height);
-            drawLedge(layer, boss, art, true);
-        } finally {
-            layer.dispose();
-        }
-        Rectangle hp = scene.header[index];
-        BufferedImage frame = assets.hpFrame(hp.width);
-        if (frame != null) g.drawImage(frame, hp.x, hp.y + hp.height - frame.getHeight(), null);
-        else UiKit.paintGauge(g, hp.x, hp.y + 8, hp.width, 10, boss.hp() / (float) Math.max(1, boss.maxHp()), A11yColors.hp(colorBlind));
-        if (frame != null) {
-            float sx = frame.getWidth() / (float) RaidArt.DATA.hpWidth;
-            float sy = frame.getHeight() / (float) RaidArt.DATA.hpHeight;
-            int ox = hp.x;
-            int oy = hp.y + hp.height - frame.getHeight();
-            RaidArt.Rect bar = RaidArt.DATA.hpBar;
-            UiKit.paintGauge(g, ox + Math.round(bar.x() * sx), oy + Math.round(bar.y() * sy),
-                    Math.max(8, Math.round(bar.w() * sx)), Math.max(4, Math.round(bar.h() * sy)),
-                    boss.hp() / (float) Math.max(1, boss.maxHp()), A11yColors.hp(colorBlind));
-        }
-        PatternId pattern = boss.nextPattern();
-        String next = pattern == null ? "패턴 없음" : pattern.displayName();
-        g.setFont(GameTheme.fontFor(next, 11, false));
-        g.setColor(colorBlind ? A11yColors.SKY : TEXT);
-        UiKit.drawInAsset(g, UiKit.AssetSlot.HP, hp, next, UiKit.Align.CENTER);
-        paintThinGauge(g, new Rectangle(hp.x + 8, hp.y + hp.height + 18, hp.width - 16, 5), snapshot.gaugeFor(index));
     }
 
     private void paintStolen(Graphics2D g) {
@@ -1116,49 +1238,52 @@ public final class RaidPanel extends JPanel {
 
     private void paintCards(Graphics2D g) {
         RaidSnapshot.CardOffer offer = snapshot.offer();
-        veilBoards(g);
-        int panelY = Math.max(120, scene.boardY - 8);
-        UiKit.paintFrame(g, UiKit.Tone.VIOLET, 16, panelY, VW - 32, VH - panelY - 28);
+        int veilTop = Math.max(0, scene.banner.y + scene.banner.height + 2);
+        g.setColor(new Color(4, 6, 16, 185));
+        g.fillRect(0, veilTop, VW, VH - veilTop);
+        int panelY = Math.max(228, veilTop + 2);
+        int panelH = VH - panelY - 22;
+        g.setColor(new Color(8, 12, 28, 238));
+        g.fillRoundRect(24, panelY + 8, VW - 48, panelH - 16, 18, 18);
+        UiKit.paintFrame(g, UiKit.Tone.VIOLET, 16, panelY, VW - 32, panelH);
         String title = offer.chooser() == 0 ? "P1이 카드를 고릅니다" : "P2가 카드를 고릅니다";
         g.setFont(GameTheme.display(22));
         g.setColor(TEXT);
-        GameTheme.drawCentered(g, title, VW / 2, panelY + 36);
-        g.setFont(GameTheme.digits(18));
+        GameTheme.drawCentered(g, title, VW / 2, panelY + 42);
+        String remain = "남은 시간  " + String.format("%.1f", offer.remainingMillis() / 1000.0) + "초";
+        g.setFont(GameTheme.fontFor(remain, 15, true));
         g.setColor(colorBlind ? A11yColors.YELLOW : new Color(0xFFE27A));
-        UiKit.drawCentered(g, String.format("%.1f", offer.remainingMillis() / 1000.0), VW / 2, panelY + 58);
+        UiKit.drawCentered(g, remain, VW / 2, panelY + 66);
         g.setFont(GameTheme.text(12, false));
         g.setColor(DIM);
-        UiKit.drawCentered(g, "초 · 좌우 이동, 하드 드롭 확정", VW / 2, panelY + 76);
-        int cardW = 168;
-        int cardH = 188;
+        UiKit.drawCentered(g, "좌우 이동 · 하드 드롭으로 확정", VW / 2, panelY + 86);
+        int cardW = 166;
+        int cardH = 204;
         int gap = 12;
         int x0 = (VW - (cardW * 3 + gap * 2)) / 2;
-        int y0 = panelY + 88;
+        int y0 = panelY + 122;
         for (int i = 0; i < offer.cards().size() && i < 3; i++) {
             int x = x0 + i * (cardW + gap);
-            int y = i == cardSelection ? y0 - 8 : y0 + 6;
+            int y = i == cardSelection ? y0 - 6 : y0 + 6;
             scene.cards[i].setBounds(x, y, cardW, cardH);
             paintCard(g, offer.cards().get(i), x, y, cardW, cardH, i == cardSelection);
         }
     }
 
     private void paintCard(Graphics2D g, CardId card, int x, int y, int w, int h, boolean selected) {
-        if (selected) {
-            Color glow = A11yColors.selected(colorBlind);
-            g.setColor(new Color(glow.getRed(), glow.getGreen(), glow.getBlue(), 70));
-            g.fillRoundRect(x - 6, y - 8, w + 12, h + 14, 18, 18);
-        }
+        g.setColor(selected ? new Color(12, 28, 52, 242) : new Color(10, 15, 34, 236));
+        g.fillRoundRect(x + 8, y + 8, w - 16, h - 16, 14, 14);
         UiKit.paintFrame(g, selected ? UiKit.Tone.CYAN : UiKit.Tone.VIOLET, x, y, w, h);
-        BufferedImage image = assets.scaled(AssetStore.cardPath(card), w - 48, h - 96);
-        if (image != null) g.drawImage(image, x + 24, y + 16, null);
+        BufferedImage image = assets.scaled(AssetStore.cardPath(card), w - 48, h - 108);
+        if (image != null) g.drawImage(image, x + (w - image.getWidth()) / 2, y + 18, null);
         g.setFont(GameTheme.fontFor(card.displayName(), 13, false));
         g.setColor(TEXT);
-        UiKit.drawCentered(g, card.displayName(), x + w / 2, y + h - 52);
-        drawDescription(g, card.description(), x + 28, y + h - 36, w - 56);
+        UiKit.drawCentered(g, card.displayName(), x + w / 2, y + h - 58);
+        drawDescription(g, card.description(), x + 22, y + h - 42, w - 44);
         if (!selected) return;
-        g.setFont(GameTheme.text(16, true));
+        g.setFont(GameTheme.text(14, true));
         g.setColor(A11yColors.selected(colorBlind));
-        UiKit.drawCentered(g, "▼", x + w / 2, y - 2);
+        UiKit.drawCentered(g, "▼", x + w / 2, y - 6);
     }
 
     private void paintVeil(Graphics2D g, String title, String hint) {
@@ -1238,7 +1363,7 @@ public final class RaidPanel extends JPanel {
     }
 
     private void paintScoreCard(Graphics2D g, int x, int y, int w, int h, String name, long score, boolean win, boolean one) {
-        UiKit.paintFrame(g, win ? UiKit.Tone.CYAN : UiKit.Tone.VIOLET, x, y, w, h);
+        UiKit.paintFrame(g, (win || one) ? UiKit.Tone.CYAN : UiKit.Tone.VIOLET, x, y, w, h);
         Rectangle ink = UiKit.contentBox(UiKit.AssetSlot.HP, new Rectangle(x, y, w, h));
         g.setFont(GameTheme.text(14, false));
         g.setColor(one ? UiKit.CYAN : UiKit.MAGENTA);
@@ -1523,6 +1648,8 @@ public final class RaidPanel extends JPanel {
         final Rectangle[] effects = {new Rectangle(), new Rectangle()};
         final Rectangle[] header = {new Rectangle(), new Rectangle()};
         final Rectangle[] raceArt = {new Rectangle(), new Rectangle()};
+        final Rectangle[] racePedestal = {new Rectangle(), new Rectangle()};
+        final Rectangle[] raceGauge = {new Rectangle(), new Rectangle()};
         final Rectangle[] cards = {new Rectangle(), new Rectangle(), new Rectangle()};
     }
 }

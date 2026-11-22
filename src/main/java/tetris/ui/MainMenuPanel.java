@@ -90,44 +90,51 @@ public class MainMenuPanel extends JPanel {
         UiKit.paintIsland(g2, 1, w - unit * 5, h * 3 / 5, unit * 4);
 
         BufferedImage logo = AssetStore.SHARED.fit(AssetStore.LOGO, (int) (w * 0.72), Math.max(unit * 4, h / 5));
+        List<String> labels = items.stream().map(MenuItem::label).toList();
+        int fontSize = unit + unit / 4;
+        int buttonWidth = Math.min(w - unit * 4, (int) (w * 0.64));
+        int buttonHeight = fontSize + fontSize / 2;
+        int gap = Math.max(8, (fontSize / 3 + 4) / 8 * 8);
+        int logoH = logo != null ? logo.getHeight() : Math.max(18, unit * 3) + unit;
+        int logoGap = Math.max(unit, unit * 3 / 2);
+        int titleH = title == null ? 0 : Math.max(16, fontSize + 2) + Math.max(12, unit / 2);
+        int warnReserve = warnings.isEmpty() ? 0 : warnings.size() * Math.max(10, unit) + unit;
+        int guideReserve = Math.max(40, unit * 3);
+        int topSafe = Math.max(unit, h / 14);
+        int availH = Math.max(buttonHeight * 2, h - topSafe - guideReserve - warnReserve);
+        int stackH = labels.size() * buttonHeight + Math.max(0, labels.size() - 1) * gap;
+        while (logoH + logoGap + titleH + stackH > availH && fontSize > 11) {
+            fontSize--;
+            buttonHeight = fontSize + fontSize / 2;
+            gap = Math.max(8, (fontSize / 3 + 4) / 8 * 8);
+            titleH = title == null ? 0 : Math.max(16, fontSize + 2) + Math.max(10, unit / 2);
+            stackH = labels.size() * buttonHeight + Math.max(0, labels.size() - 1) * gap;
+        }
+        int totalH = logoH + logoGap + titleH + stackH;
+        int startY = topSafe + Math.max(0, (availH - totalH) * 2 / 5);
         int menuTop;
         if (logo != null) {
-            int logoY = Math.max(unit / 2, h / 14);
-            g2.drawImage(logo, (w - logo.getWidth()) / 2, logoY, null);
-            menuTop = logoY + logo.getHeight() + unit;
+            g2.drawImage(logo, (w - logo.getWidth()) / 2, startY, null);
+            menuTop = startY + logo.getHeight() + logoGap;
         } else {
             int titleSize = Math.max(18, unit * 3);
             g2.setFont(tetris.ui.theme.GameTheme.display(titleSize));
             tetris.ui.theme.UiKit.drawInBox(g2, Messages.get("app.title"),
-                    new java.awt.Rectangle(unit, h / 10, w - unit * 2, titleSize + unit),
+                    new java.awt.Rectangle(unit, startY, w - unit * 2, logoH),
                     tetris.ui.theme.UiKit.Align.CENTER);
-            menuTop = h / 4;
-        }
-
-        List<String> labels = items.stream().map(MenuItem::label).toList();
-        int fontSize = unit + unit / 4;
-        int buttonWidth = Math.min(w - unit * 4, (int) (w * 0.62));
-        int buttonHeight = fontSize + fontSize / 2;
-        int gap = Math.max(8, (fontSize / 3 + 4) / 8 * 8);
-        int menuHeight = labels.size() * (buttonHeight + gap) + (title == null ? 0 : fontSize * 2);
-        int limit = h - unit * 4 - menuTop;
-        while (menuHeight > limit && fontSize > 11) {
-            fontSize--;
-            buttonHeight = fontSize + fontSize / 2;
-            gap = Math.max(8, (fontSize / 3 + 4) / 8 * 8);
-            menuHeight = labels.size() * (buttonHeight + gap) + (title == null ? 0 : fontSize * 2);
+            menuTop = startY + logoH + logoGap;
         }
         if (title != null) {
             int titleSize = Math.max(16, fontSize + 2);
             g2.setFont(tetris.ui.theme.GameTheme.display(titleSize));
             tetris.ui.theme.UiKit.drawInBox(g2, title,
-                    new java.awt.Rectangle(unit, menuTop, w - unit * 2, titleSize + 8),
+                    new java.awt.Rectangle(unit, menuTop, w - unit * 2, titleSize + 6),
                     tetris.ui.theme.UiKit.Align.CENTER);
-            menuTop += titleSize + 8;
+            menuTop += titleH;
         }
         hits.begin(null);
-        int pillH = fontSize + fontSize / 2;
-        int pillGap = Math.max(8, (fontSize / 3 + 4) / 8 * 8);
+        int pillH = buttonHeight;
+        int pillGap = gap;
         int pillX = w / 2 - buttonWidth / 2;
         int pillY = menuTop;
         for (int i = 0; i < labels.size(); i++) {

@@ -165,46 +165,52 @@ public final class BattleResultPanel extends JPanel {
         GameTheme.applyQuality(g);
         UiKit.paintScene(g, getWidth(), getHeight());
         int w = Math.min(640, getWidth() - 48);
-        int h = 360;
+        int h = 368;
         int x = (getWidth() - w) / 2;
         int y = (getHeight() - h) / 2;
+        g.setColor(new Color(8, 12, 28, 218));
+        g.fillRoundRect(x + 8, y + 8, w - 16, h - 16, 18, 18);
         UiKit.paintFrame(g, UiKit.Tone.VIOLET, x, y, w, h);
         g.setFont(GameTheme.display(32));
         g.setColor(Color.WHITE);
-        GameTheme.drawCentered(g, title, getWidth() / 2, y + 64);
+        UiKit.drawInBox(g, title, new Rectangle(x + 24, y + 24, w - 48, 44), UiKit.Align.CENTER);
         if (!reason.isEmpty()) {
-            UiKit.paintCapsule(g, getWidth() / 2 - 70, y + 80, 140, 28);
+            UiKit.paintCapsule(g, getWidth() / 2 - 76, y + 76, 152, 28);
             g.setFont(GameTheme.text(14, false));
-            UiKit.drawInBox(g, reason, new Rectangle(getWidth() / 2 - 70, y + 80, 140, 28), UiKit.Align.CENTER);
+            g.setColor(Color.WHITE);
+            UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, new Rectangle(getWidth() / 2 - 76, y + 76, 152, 28), reason, UiKit.Align.CENTER);
         }
-        paintCard(g, x + 36, y + 128, (w - 88) / 2, 96, nameOne, scoreOne, winner == 0, true);
-        paintCard(g, x + 52 + (w - 88) / 2, y + 128, (w - 88) / 2, 96, nameTwo, scoreTwo, winner == 1, false);
+        paintCard(g, x + 36, y + 122, (w - 88) / 2, 102, nameOne, scoreOne, winner == 0, true);
+        paintCard(g, x + 52 + (w - 88) / 2, y + 122, (w - 88) / 2, 102, nameTwo, scoreTwo, winner == 1, false);
         int buttonW = 148;
         int gap = 16;
         int row = choices.size() * buttonW + (choices.size() - 1) * gap;
         int bx = (getWidth() - row) / 2;
         for (int i = 0; i < choices.size(); i++) {
             Rectangle box = buttons.get(i);
-            box.setBounds(bx, y + 248, buttonW, 40);
+            box.setBounds(bx, y + 244, buttonW, 42);
             UiKit.paintButton(g, i == selected, box.x, box.y, box.width, box.height, false, UiKit.pulse());
             g.setFont(GameTheme.display(16));
             g.setColor(Color.WHITE);
-            UiKit.drawInBox(g, choices.get(i).label(), box, UiKit.Align.CENTER);
+            UiKit.drawInAsset(g, UiKit.AssetSlot.BUTTON, box, choices.get(i).label(), UiKit.Align.CENTER, i == selected);
             bx += buttonW + gap;
         }
         UiKit.paintCapsule(g, x + 24, y + h - 48, w - 48, 28);
         g.setFont(GameTheme.text(13, false));
-        UiKit.drawInBox(g, hintText, new Rectangle(x + 24, y + h - 48, w - 48, 28), UiKit.Align.CENTER);
+        g.setColor(Color.WHITE);
+        UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, new Rectangle(x + 24, y + h - 48, w - 48, 28), hintText, UiKit.Align.CENTER);
     }
 
     private void paintCard(Graphics2D g, int x, int y, int w, int h, String name, long score, boolean win, boolean one) {
-        UiKit.paintFrame(g, win ? UiKit.Tone.CYAN : UiKit.Tone.VIOLET, x, y, w, h);
-        g.setFont(GameTheme.text(14, false));
+        g.setColor(new Color(10, 15, 34, 210));
+        g.fillRoundRect(x + 6, y + 6, w - 12, h - 12, 12, 12);
+        UiKit.paintFrame(g, win ? UiKit.Tone.CYAN : (one ? UiKit.Tone.CYAN : UiKit.Tone.MAGENTA), x, y, w, h);
+        g.setFont(GameTheme.text(15, true));
         g.setColor(one ? UiKit.CYAN : UiKit.MAGENTA);
-        g.drawString((one ? "◆ " : "★ ") + name, x + 16, y + 28);
+        UiKit.drawIconText(g, new Rectangle(x + 12, y + 14, w - 24, 24), one ? "◆" : "★", name);
         g.setFont(GameTheme.digits(28));
         g.setColor(Color.WHITE);
-        GameTheme.drawCentered(g, String.valueOf(score), x + w / 2, y + 68);
+        UiKit.drawInBox(g, String.valueOf(score), new Rectangle(x + 12, y + 42, w - 24, 42), UiKit.Align.CENTER);
     }
 
     private void bind(int keyCode, String name, Runnable callback) {

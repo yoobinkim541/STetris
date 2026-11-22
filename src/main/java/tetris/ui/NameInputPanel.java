@@ -50,18 +50,18 @@ public class NameInputPanel extends JPanel {
         field.addMouseListener(new MouseAdapter() {
             @Override public void mousePressed(MouseEvent e) { field.requestFocusInWindow(); }
         });
-        JLabel save = label("저장", 18, true, tetris.ui.theme.UiKit.CYAN);
+        JLabel save = new SavePill("저장");
         save.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         save.addMouseListener(new MouseAdapter() {
             @Override public void mousePressed(MouseEvent e) { clickSave(); }
         });
 
-        addRow(label(Messages.get("name.title"), 34, true, Theme.ACCENT), 0, 24);
-        addRow(scoreLabel, 1, 24);
-        addRow(label(Messages.get("name.prompt"), 14, false, Theme.DIM_TEXT), 2, 8);
+        addRow(label(Messages.get("name.title"), 32, true, Theme.ACCENT), 0, 18);
+        addRow(scoreLabel, 1, 20);
+        addRow(label(Messages.get("name.prompt"), 13, false, Theme.DIM_TEXT), 2, 10);
         addRow(field, 3, 8);
-        addRow(hintLabel, 4, 8);
-        addRow(save, 5, 8);
+        addRow(hintLabel, 4, 10);
+        addRow(save, 5, 16);
         addRow(label(Messages.keyGuide(MainFrame.Screen.NAME_INPUT, null), 13, false, Theme.DIM_TEXT), 6, 0);
 
     }
@@ -92,7 +92,16 @@ public class NameInputPanel extends JPanel {
     protected void paintComponent(java.awt.Graphics g) {
         java.awt.Graphics2D g2 = (java.awt.Graphics2D) g;
         tetris.ui.theme.GameTheme.applyQuality(g2);
-        tetris.ui.theme.UiKit.paintScene(g2, getWidth(), getHeight());
+        int w = getWidth();
+        int h = getHeight();
+        tetris.ui.theme.UiKit.paintScene(g2, w, h);
+        int cardW = Math.min(w - 48, 440);
+        int cardH = Math.min(h - 72, 372);
+        int cardX = (w - cardW) / 2;
+        int cardY = (h - cardH) / 2;
+        g2.setColor(new Color(8, 12, 28, 212));
+        g2.fillRoundRect(cardX + 8, cardY + 8, cardW - 16, cardH - 16, 18, 18);
+        tetris.ui.theme.UiKit.paintFrame(g2, tetris.ui.theme.UiKit.Tone.CYAN, cardX, cardY, cardW, cardH);
     }
 
     private void submit() {
@@ -116,6 +125,27 @@ public class NameInputPanel extends JPanel {
         label.setFont(size > 14 ? tetris.ui.theme.GameTheme.display(size) : tetris.ui.theme.GameTheme.text(size, bold));
         label.setForeground(color);
         return label;
+    }
+
+    private static final class SavePill extends JLabel {
+        private SavePill(String text) {
+            super(text, SwingConstants.CENTER);
+            setOpaque(false);
+            setFont(tetris.ui.theme.GameTheme.display(18));
+            setForeground(Color.WHITE);
+            setPreferredSize(new java.awt.Dimension(176, 40));
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            java.awt.Graphics2D g2 = Theme.smooth(g);
+            tetris.ui.theme.UiKit.paintButton(g2, true, 0, 0, getWidth(), getHeight(), false, tetris.ui.theme.UiKit.pulse());
+            g2.setFont(getFont());
+            g2.setColor(Color.WHITE);
+            tetris.ui.theme.UiKit.drawInBox(g2, getText(),
+                    new java.awt.Rectangle(0, 0, getWidth(), getHeight()),
+                    tetris.ui.theme.UiKit.Align.CENTER);
+        }
     }
 
     private static final class ThemedLabel extends JLabel {

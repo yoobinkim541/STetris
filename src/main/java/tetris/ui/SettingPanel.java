@@ -338,30 +338,40 @@ public class SettingPanel extends JPanel {
         paintHeading(g2, title, titleSize, w / 2, titleBaseline);
 
         List<String[]> rows = inControlKeys ? keyRows() : settingRows();
-        int rowH = Math.max(40, (unit * 2 / 8) * 8);
-        int y = ((titleBaseline + pad * 2) / 8) * 8;
+        int rowH = Math.max(38, Math.min(44, (unit * 2 / 8) * 8));
+        int guideReserve = Math.max(44, unit * 3);
+        int noticeReserve = notice.isEmpty() ? 16 : unit * 3;
+        int minTop = ((titleBaseline + pad * 2) / 8) * 8;
+        int availH = Math.max(rowH * 4, h - minTop - guideReserve - noticeReserve);
+        if (rows.size() * rowH > availH) {
+            rowH = Math.max(30, availH / Math.max(1, rows.size()));
+        }
+        int y = minTop + Math.max(0, (availH - rows.size() * rowH) / 3);
         int labelX = pad * 4;
         int rowW = Math.max(pad * 8, w - pad * 8);
         boolean colorBlind = settings.isColorBlindMode();
         for (int i = 0; i < rows.size(); i++) {
-            java.awt.Rectangle row = new java.awt.Rectangle(labelX, y, rowW, rowH - pad);
+            java.awt.Rectangle row = new java.awt.Rectangle(labelX, y, rowW, Math.max(24, rowH - pad));
             boolean isSelected = i == selected;
             tetris.ui.theme.UiKit.paintButton(g2, isSelected, row.x, row.y, row.width, row.height,
                     colorBlind, tetris.ui.theme.UiKit.pulse());
             hits.add("row:" + i, row);
+            // 좌우 크리스털 캡을 피해 대칭 내부 영역에 글자를 배치한다
+            int capPad = Math.max(48, Math.min(64, row.width / 9));
+            java.awt.Rectangle inner = new java.awt.Rectangle(
+                    row.x + capPad, row.y + 3, Math.max(24, row.width - capPad * 2), Math.max(12, row.height - 6));
             String value = rows.get(i)[1];
-            int font = Math.max(14, unit);
+            int font = Math.max(13, Math.min(16, unit));
             g2.setFont(Theme.font(rows.get(i)[0], font, false));
-            g2.setColor(isSelected ? java.awt.Color.WHITE : Theme.TEXT);
-            tetris.ui.theme.UiKit.drawInAsset(g2, tetris.ui.theme.UiKit.AssetSlot.BUTTON, row,
-                    rows.get(i)[0], tetris.ui.theme.UiKit.Align.LEFT, isSelected);
-            g2.setFont(Theme.font(value, font, false));
-            tetris.ui.theme.UiKit.drawInAsset(g2, tetris.ui.theme.UiKit.AssetSlot.BUTTON, row,
-                    value, tetris.ui.theme.UiKit.Align.RIGHT, isSelected);
+            g2.setColor(Color.WHITE);
+            tetris.ui.theme.UiKit.drawInBox(g2, rows.get(i)[0], inner, tetris.ui.theme.UiKit.Align.LEFT);
+            boolean isArrowKey = inControlKeys && ("←".equals(value) || "→".equals(value) || "↑".equals(value) || "↓".equals(value));
+            g2.setFont(Theme.font(value, isArrowKey ? font + 2 : font, false));
+            g2.setColor(isSelected ? Color.WHITE : new Color(0xD8EEFF));
+            tetris.ui.theme.UiKit.drawInBox(g2, value, inner, tetris.ui.theme.UiKit.Align.RIGHT);
             if (value.startsWith("◀") && value.endsWith("▶")) {
                 int textWidth = tetris.ui.theme.GameTheme.width(g2, value);
-                java.awt.Rectangle hole = tetris.ui.theme.UiKit.contentBox(tetris.ui.theme.UiKit.AssetSlot.BUTTON, row);
-                int valueRight = hole.x + hole.width;
+                int valueRight = inner.x + inner.width;
                 int valueLeft = valueRight - textWidth;
                 int arrow = Math.max(24, g2.getFontMetrics().stringWidth("◀") + pad);
                 hits.add("dec:" + i, valueLeft - 4, row.y, arrow, row.height);
@@ -371,11 +381,19 @@ public class SettingPanel extends JPanel {
         }
 
         if (!notice.isEmpty()) {
-            g2.setFont(Theme.text(Math.max(14, unit * 4 / 5), true));
-            g2.setColor(java.awt.Color.WHITE);
+            int noticeW = Math.min(rowW, Math.max(260, w * 3 / 5));
+            int noticeH = Math.max(30, unit * 3 / 2);
+            int noticeX = (w - noticeW) / 2;
+            int noticeY = Math.min(h - guideReserve - noticeH - 4, y + 12);
+            g2.setColor(new Color(8, 12, 28, 215));
+            g2.fillRoundRect(noticeX, noticeY, noticeW, noticeH, 12, 12);
+            g2.setColor(noticeIsError ? Theme.WARNING : Theme.ACCENT);
+            g2.drawRoundRect(noticeX, noticeY, noticeW - 1, noticeH - 1, 12, 12);
+            g2.setFont(Theme.text(Math.max(13, unit * 4 / 5), false));
+            g2.setColor(noticeIsError ? Theme.WARNING : Theme.ACCENT);
             String shown = noticeIsError && !notice.startsWith("⚠") ? "⚠ " + notice : notice;
             tetris.ui.theme.UiKit.drawInBox(g2, shown,
-                    new java.awt.Rectangle(pad, y, w - pad * 2, unit * 2), tetris.ui.theme.UiKit.Align.CENTER);
+                    new java.awt.Rectangle(noticeX + 10, noticeY, noticeW - 20, noticeH), tetris.ui.theme.UiKit.Align.CENTER);
         }
 
         String guide = inControlKeys ? Messages.get("guide.controlKeys") : Messages.keyGuide(MainFrame.Screen.SETTINGS, null);
