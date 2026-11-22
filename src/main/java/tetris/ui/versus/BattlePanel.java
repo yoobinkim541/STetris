@@ -462,8 +462,9 @@ public final class BattlePanel extends JPanel {
             }
         }
 
-        renderer.paintGhost(g, player.ghost(), board.x, board.y, BOARD_CELL);
+        // 보드 배경을 먼저 칠하고 착지 표시를 위에 그린다. 순서가 반대면 배경이 착지 지점을 덮어 보이지 않았다
         renderer.paintPlayfield(g, player.cells(), player.items(), board.x, board.y, BOARD_CELL);
+        renderer.paintLanding(g, player.cells(), player.ghost(), board.x, board.y, BOARD_CELL);
         paintAttackQueue(g, player, id);
         paintThreatGauge(g, player, id, board);
         int combo = p1 ? comboOne : comboTwo;

@@ -1,7 +1,5 @@
 package tetris.ui.versus;
-import java.awt.AlphaComposite;
 import java.awt.Color;
-import java.awt.Composite;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
@@ -50,23 +48,6 @@ public final class BoardRenderer {
                 if (items[r][c] != 0) paintItem(g, (char) items[r][c], x + c * size, y + r * size, size);
             }
         }
-    }
-    /** 착지 미리보기. 색맹 모드는 윤곽만 그린다 (GST-2) */
-    public void paintGhost(Graphics2D g, int[][] ghost, int x, int y, int size) {
-        if (ghost == null || size <= 0) return;
-        Graphics2D layer = (Graphics2D) g.create();
-        try {
-            if (!colorBlind) layer.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.35f));
-            for (int r = 0; r < ghost.length; r++) for (int c = 0; c < ghost[r].length; c++) {
-                if (ghost[r][c] == 0) continue;
-                int px = x + c * size, py = y + r * size;
-                if (colorBlind) {
-                    tetris.ui.fx.A11yColors.paintGhostCell(layer, px, py, size, true);
-                } else {
-                    paintCell(layer, ghost[r][c], px, py, size, false);
-                }
-            }
-        } finally { layer.dispose(); }
     }
     /**
      * 클래식 게임 화면과 같은 착지 표시: 점선 착지 지점과 떨어지는 조각 아래 빛기둥 (레이드).
