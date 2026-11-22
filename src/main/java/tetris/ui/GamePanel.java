@@ -115,6 +115,9 @@ public class GamePanel extends JPanel implements GameListener {
     public void onChanged(GameSnapshot snapshot) {
         observe(snapshot);
         this.snapshot = snapshot;
+        // 이 화면은 창을 띄울 때 메뉴 뒤에 숨은 채로 붙어 addNotify에서는 타이머가 시작되지 않는다.
+        // 타이머가 멈춰 있으면 점수 표시가 0에서 올라가지 않으므로 게임 상태가 오면 켠다
+        if (!fxTimer.isRunning()) fxTimer.start();
         updateOverlays();
         repaint();
     }
