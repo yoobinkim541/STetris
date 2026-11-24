@@ -21,7 +21,7 @@ final class CloudFog {
         frame++;
     }
 
-    void paint(Graphics2D g, Rectangle play, int[] area, int cell, boolean colorBlind) {
+    void paint(Graphics2D g, Rectangle play, int[] area, int cell, boolean colorBlind, float alpha) {
         if (area == null || area.length < 4 || cell <= 0) return;
         int x = play.x + area[1] * cell;
         int y = play.y + area[0] * cell;
@@ -34,6 +34,7 @@ final class CloudFog {
         Graphics2D layer = (Graphics2D) g.create();
         try {
             layer.clipRect(play.x, play.y, play.width, play.height);
+            if (alpha < 0.99f) layer.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, alpha)));
             layer.clipRect(x, y, w, h);
             layer.drawImage(large, x + shift - w / 5, y + lift - h / 6, w + w / 3, h + h / 4, null);
             layer.drawImage(small, x + w / 3 - shift, y + h / 4, w / 2, h / 2, null);

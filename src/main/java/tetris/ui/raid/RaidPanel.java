@@ -77,6 +77,11 @@ public final class RaidPanel extends JPanel {
     private int skillTarget = -1;
     private BossId skillBoss;
     private long skillStarted = Long.MIN_VALUE;
+    private static final long IMPACT_MILLIS = 380;
+    private static final long CLOUD_FADE_MILLIS = 450;
+    private final boolean[][][] impact = new boolean[2][][];
+    private final long[] impactSince = {Long.MIN_VALUE, Long.MIN_VALUE};
+    private final long[] cloudSince = {Long.MIN_VALUE, Long.MIN_VALUE};
     private long countdownAnchor = -1;
     private long lastRevision = Long.MIN_VALUE;
     private int stolenSlower = -1;
@@ -127,7 +132,8 @@ public final class RaidPanel extends JPanel {
     }
 
     public void setSnapshot(RaidSnapshot snapshot) {
-        RaidPhase previous = this.snapshot == null ? null : this.snapshot.phase();
+        RaidSnapshot before = this.snapshot;
+        RaidPhase previous = before == null ? null : before.phase();
         this.snapshot = snapshot;
         if (snapshot != null && snapshot.phase() == RaidPhase.COUNTDOWN && previous != RaidPhase.COUNTDOWN) {
             countdownAnchor = System.currentTimeMillis();
@@ -137,6 +143,7 @@ public final class RaidPanel extends JPanel {
             fx.absorb(snapshot.events());
             noteStolen(snapshot.events());
             noteSkill(snapshot);
+            noteArrivals(before, snapshot);
             lastRevision = snapshot.revision();
         }
         if (snapshot != null && snapshot.boss() != null) {
@@ -934,7 +941,60 @@ public final class RaidPanel extends JPanel {
             g.fillOval(cx, cy, scene.cell * 3, scene.cell * 3);
         }
         paintLucky(g, player.lucky(), play);
-        paintCloud(g, player, play);
+        paintCloud(g, player, play, index);
+        paintImpact(g, index, play);
+    }
+
+    /** 방금 생긴 회색 칸(쓰레기 줄·덩어리·기둥)을 짧게 밝혀, 갑자기 나타난 것이 아니라 날아와 박힌 것처럼 보이게 */
+    private void paintImpact(Graphics2D g, int index, Rectangle play) {
+        boolean[][] cells = impact[index];
+        if (cells == null || impactSince[index] == Long.MIN_VALUE) return;
+        long age = (System.nanoTime() - impactSince[index]) / 1_000_000L;
+        if (age < 0 || age >= IMPACT_MILLIS) return;
+        float alpha = 0.65f * (1f - age / (float) IMPACT_MILLIS);
+        g.setColor(withAlpha(Color.WHITE, alpha));
+        int inset = Math.max(1, scene.cell / 10);
+        for (int r = 0; r < cells.length; r++) {
+            for (int c = 0; c < cells[r].length; c++) {
+                if (!cells[r][c]) continue;
+                g.fillRoundRect(play.x + c * scene.cell + inset, play.y + r * scene.cell + inset,
+                        scene.cell - inset * 2, scene.cell - inset * 2, 4, 4);
+            }
+        }
+    }
+
+    /** 직전 스냅샷과 비교해 새 회색 칸과 새 구름을 기록한다 */
+    private void noteArrivals(RaidSnapshot before, RaidSnapshot after) {
+        if (before == null || !before.raidId().equals(after.raidId())) return;
+        int n = Math.min(Math.min(before.players().size(), after.players().size()), impact.length);
+        long now = System.nanoTime();
+        for (int i = 0; i < n; i++) {
+            int[][] was = before.players().get(i).board().cells();
+            int[][] is = after.players().get(i).board().cells();
+            boolean[][] fresh = new boolean[is.length][];
+            boolean any = false;
+            for (int r = 0; r < is.length; r++) {
+                fresh[r] = new boolean[is[r].length];
+                for (int c = 0; c < is[r].length; c++) {
+                    boolean gray = is[r][c] == VersusRules.ATTACK_CELL;
+                    boolean wasGray = r < was.length && c < was[r].length && was[r][c] == VersusRules.ATTACK_CELL;
+                    if (gray && !wasGray) {
+                        fresh[r][c] = true;
+                        any = true;
+                    }
+                }
+            }
+            if (any) {
+                impact[i] = fresh;
+                impactSince[i] = now;
+            }
+            if (hasCloud(after.players().get(i)) && !hasCloud(before.players().get(i))) cloudSince[i] = now;
+        }
+    }
+
+    private static boolean hasCloud(RaidSnapshot.PlayerView player) {
+        for (RaidSnapshot.Effect effect : player.effects()) if (effect.pattern() == PatternId.CLOUD) return true;
+        return false;
     }
 
     private void paintNameTab(Graphics2D g, RaidSnapshot.PlayerView player, int index) {
@@ -1429,6 +1489,10 @@ public final class RaidPanel extends JPanel {
             g.setColor(warn);
             g.setStroke(new BasicStroke(1.8f));
             g.drawRoundRect(box.x, box.y, box.width - 1, box.height - 1, 14, 14);
+            if (box.width < 220) {
+                paintStackedCallout(g, box, warn);
+                return;
+            }
             int icon = Math.min(40, box.height - 24);
             BufferedImage image = assets.scaled(AssetStore.patternPath(skillPattern), AssetStore.devicePixels(g, icon),
                     AssetStore.devicePixels(g, icon));
@@ -1458,11 +1522,42 @@ public final class RaidPanel extends JPanel {
         }
     }
 
-    /** 솔로·협동은 보스 그림 위쪽(HP 막대는 가리지 않는다), 레이스는 맞은 사람 쪽 보스 칸 */
+    /** 좁은 칸(레이스의 두 보스 사이)용 세로 배치: 아이콘, 제목, 대상 화살표, 설명 */
+    private void paintStackedCallout(Graphics2D g, Rectangle box, Color warn) {
+        int icon = 34;
+        BufferedImage image = assets.scaled(AssetStore.patternPath(skillPattern), AssetStore.devicePixels(g, icon),
+                AssetStore.devicePixels(g, icon));
+        if (image != null) g.drawImage(image, box.x + (box.width - icon) / 2, box.y + 8, icon, icon, null);
+        int inner = box.width - 16;
+        int y = box.y + 8 + icon + 4;
+        g.setFont(GameTheme.text(14, true));
+        g.setColor(warn);
+        for (String line : tetris.ui.theme.TextWrap.lines(skillPattern.displayName() + "!", g.getFontMetrics(), inner, 2)) {
+            UiKit.drawInBox(g, line, new Rectangle(box.x + 8, y, inner, 18), UiKit.Align.CENTER);
+            y += 18;
+        }
+        String target = skillTarget == 0 ? "◀ P1" : skillTarget == 1 ? "P2 ▶" : "◀ 모두 ▶";
+        g.setFont(GameTheme.fontFor(target, 13, true));
+        g.setColor(TEXT);
+        UiKit.drawInBox(g, target, new Rectangle(box.x + 8, y, inner, 18), UiKit.Align.CENTER);
+        y += 22;
+        g.setFont(GameTheme.text(11, false));
+        List<String> lines = tetris.ui.theme.TextWrap.lines(skillPattern.description(), g.getFontMetrics(), inner, 4);
+        for (String line : lines) {
+            if (y + 15 > box.y + box.height - 4) break;
+            UiKit.drawInBox(g, line, new Rectangle(box.x + 8, y, inner, 15), UiKit.Align.CENTER);
+            y += 15;
+        }
+    }
+
+    /** 솔로·협동은 보스 그림 위쪽(HP 막대는 가리지 않는다), 레이스는 두 보스 사이 빈 칸 */
     private Rectangle calloutBox() {
         if (snapshot.mode() == RaidMode.RACE) {
-            Rectangle art = scene.raceArt[Math.max(0, Math.min(1, skillTarget))];
-            return new Rectangle(art.x, art.y + 24, art.width, 88);
+            Rectangle left = scene.raceArt[0];
+            Rectangle right = scene.raceArt[1];
+            int x = left.x + left.width + 6;
+            int bottom = scene.racePedestal[0].y + scene.racePedestal[0].height;
+            return new Rectangle(x, left.y, Math.max(120, right.x - 6 - x), Math.max(120, bottom - left.y));
         }
         int width = Math.min(VW - 40, 440);
         return new Rectangle((VW - width) / 2, scene.boss.y + 6, width, 64);
@@ -1535,12 +1630,12 @@ public final class RaidPanel extends JPanel {
         g.setColor(selected ? new Color(12, 28, 52, 242) : new Color(10, 15, 34, 236));
         g.fillRoundRect(x + 8, y + 8, w - 16, h - 16, 14, 14);
         UiKit.paintFrame(g, selected ? UiKit.Tone.CYAN : UiKit.Tone.VIOLET, x, y, w, h);
-        BufferedImage image = assets.scaled(AssetStore.cardPath(card), w - 48, h - 108);
-        if (image != null) g.drawImage(image, x + (w - image.getWidth()) / 2, y + 18, null);
-        g.setFont(GameTheme.fontFor(card.displayName(), 13, false));
+        BufferedImage image = assets.scaled(AssetStore.cardPath(card), w - 56, h - 124);
+        if (image != null) g.drawImage(image, x + (w - image.getWidth()) / 2, y + 16, null);
+        g.setFont(GameTheme.fontFor(card.displayName(), 15, false));
         g.setColor(TEXT);
-        UiKit.drawCentered(g, card.displayName(), x + w / 2, y + h - 58);
-        drawDescription(g, card.description(), x + 22, y + h - 42, w - 44);
+        UiKit.drawCentered(g, card.displayName(), x + w / 2, y + h - 74);
+        drawDescription(g, card.description(), x + 14, y + h - 54, w - 28);
         if (!selected) return;
         g.setFont(GameTheme.text(14, true));
         g.setColor(A11yColors.selected(colorBlind));
@@ -1903,10 +1998,14 @@ public final class RaidPanel extends JPanel {
         }
     }
 
-    private void paintCloud(Graphics2D g, RaidSnapshot.PlayerView player, Rectangle play) {
+    private void paintCloud(Graphics2D g, RaidSnapshot.PlayerView player, Rectangle play, int index) {
+        long since = cloudSince[index];
+        // 구름은 0.45초에 걸쳐 짙어진다. 한 프레임에 덮이면 화면이 끊긴 것처럼 보였다
+        float alpha = since == Long.MIN_VALUE ? 1f
+                : Math.max(0f, Math.min(1f, (System.nanoTime() - since) / 1_000_000L / (float) CLOUD_FADE_MILLIS));
         for (RaidSnapshot.Effect effect : player.effects()) {
             if (effect.pattern() != PatternId.CLOUD) continue;
-            fog.paint(g, play, effect.area(), scene.cell, colorBlind);
+            fog.paint(g, play, effect.area(), scene.cell, colorBlind, alpha);
         }
     }
 
@@ -2019,6 +2118,9 @@ public final class RaidPanel extends JPanel {
         lines.add("→ P1");
         lines.add("→ P2");
         lines.add("→ 모두");
+        lines.add("◀ P1");
+        lines.add("P2 ▶");
+        lines.add("◀ 모두 ▶");
         lines.add("도망치기 전에 잡기");
         lines.add("일시정지 키로 다시 시작합니다");
         lines.add("나가기 키로 레이드를 끝낼 수 있습니다");
@@ -2108,19 +2210,20 @@ public final class RaidPanel extends JPanel {
         return size;
     }
 
+    /** 카드 설명. 13px 세 줄까지, 넘치면 12px. 예전 11px 두 줄은 10초 안에 읽기 어려웠다 */
     private static void drawDescription(Graphics2D g, String text, int x, int y, int width) {
         if (text == null || text.isEmpty()) return;
-        int size = 11;
+        int size = 13;
         g.setFont(GameTheme.text(size, false));
-        java.util.List<String> lines = tetris.ui.theme.TextWrap.lines(text, g.getFontMetrics(), width, 2);
-        if (tetris.ui.theme.TextWrap.overflows(lines, g.getFontMetrics(), width, 2)) {
-            size = 10;
+        java.util.List<String> lines = tetris.ui.theme.TextWrap.lines(text, g.getFontMetrics(), width, 3);
+        if (tetris.ui.theme.TextWrap.overflows(lines, g.getFontMetrics(), width, 3)) {
+            size = 12;
             g.setFont(GameTheme.text(size, false));
-            lines = tetris.ui.theme.TextWrap.lines(text, g.getFontMetrics(), width, 2);
+            lines = tetris.ui.theme.TextWrap.lines(text, g.getFontMetrics(), width, 3);
         }
-        g.setColor(DIM);
-        for (int i = 0; i < Math.min(2, lines.size()); i++) {
-            UiKit.drawCentered(g, lines.get(i), x + width / 2, y + i * (size + 3));
+        g.setColor(TEXT);
+        for (int i = 0; i < Math.min(3, lines.size()); i++) {
+            UiKit.drawCentered(g, lines.get(i), x + width / 2, y + i * (size + 4));
         }
     }
 
