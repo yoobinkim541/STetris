@@ -20,6 +20,8 @@ import tetris.ui.fx.StarfieldBackground;
 final class BossMotion {
     private static final int INTRO_FRAMES = 22;
     private static final int DEFEAT_FRAMES = 28;
+    /** 패턴을 쓸 때 몸을 들었다가 보드 쪽으로 내리찍는 시간 (약 0.45초) */
+    static final int ATTACK_FRAMES = 28;
 
     private final Map<String, BufferedImage> flash = new HashMap<>();
     private final Map<String, BufferedImage> aura = new HashMap<>();
@@ -32,6 +34,9 @@ final class BossMotion {
     private int trailWait;
     private int intro = -1;
     private int defeat = -1;
+    private int attack = -1;
+    /** 처치 페이드가 끝난 뒤 다음 보스가 나올 때까지 숨긴다 (카드 고르는 동안 죽은 보스가 다시 보이지 않게) */
+    private boolean gone;
     private BossId shown;
     private int shownLevel;
 
@@ -41,6 +46,7 @@ final class BossMotion {
             shownLevel = level;
             trail = hp;
             defeat = -1;
+            gone = false;
             if (events != null) {
                 for (RaidEvent event : events) {
                     if (event.type() == RaidEvent.Type.BOSS_SPAWN) intro = INTRO_FRAMES;
@@ -58,7 +64,7 @@ final class BossMotion {
                     recoil = Math.max(recoil, Math.min(16, 4 + amount / 18));
                 }
                 case BOSS_DEFEATED -> {
-                    if (defeat < 0) {
+                    if (defeat < 0 && !gone) {
                         defeat = DEFEAT_FRAMES;
                         spawnShards();
                     }
@@ -66,7 +72,9 @@ final class BossMotion {
                 case BOSS_SPAWN -> {
                     intro = INTRO_FRAMES;
                     defeat = -1;
+                    gone = false;
                 }
+                case BOSS_ATTACK -> attack = ATTACK_FRAMES;
                 default -> {
                 }
             }
@@ -83,8 +91,12 @@ final class BossMotion {
         }
         if (defeat > 0) {
             defeat--;
-            if (defeat == 0) defeat = -1;
+            if (defeat == 0) {
+                defeat = -1;
+                gone = true;
+            }
         }
+        if (attack > 0) attack--;
         for (Dust bit : dust) if (bit != null && bit.life > 0) bit.tick();
         if (defeat >= 0 && !StarfieldBackground.lowEffects()) {
             for (Shard shard : shards) if (shard != null && shard.life > 0) shard.tick();
@@ -104,6 +116,53 @@ final class BossMotion {
         if (intro <= 0) return 0;
         float t = intro / (float) INTRO_FRAMES;
         return (int) (-t * t * 90);
+    }
+
+    /** 보스 소개가 끝나 턱에 처음 드러날 때 등장 연출을 다시 한다. 소개 막 뒤에서 끝나 버리지 않게 */
+    void replayEntrance() {
+        intro = INTRO_FRAMES;
+    }
+
+    /** 움직임이 없으면 화면은 정지 그림 한 장을 찍는다 (매 프레임 보스를 다시 합성하지 않는다) */
+    boolean idle() {
+        return intro <= 0 && recoil <= 0 && attack <= 0 && defeat < 0;
+    }
+
+    /** 처치 연출이 끝나 다음 보스를 기다리는 중이면 보스를 그리지 않는다 */
+    boolean gone() {
+        return gone;
+    }
+    /** 공격 진행 0..1. 공격 중이 아니면 -1 */
+    float attackProgress() {
+        if (attack <= 0 || StarfieldBackground.lowEffects()) return -1f;
+        return 1f - attack / (float) ATTACK_FRAMES;
+    }
+
+    /** 들어 올림(위로 −8) → 내리찍기(아래로 +14) → 천천히 제자리 */
+    int attackLunge() {
+        float t = attackProgress();
+        if (t < 0) return 0;
+        if (t < 0.3f) return Math.round(-8f * easeOut(t / 0.3f));
+        if (t < 0.45f) return Math.round(-8f + 22f * easeIn((t - 0.3f) / 0.15f));
+        return Math.round(14f * (1f - easeOut((t - 0.45f) / 0.55f)));
+    }
+
+    /** 내리찍는 순간 살짝 커졌다가 돌아온다. 두 단계로만 바꿔 장치 크기 그림을 매 프레임 새로 만들지 않는다 */
+    float attackScale() {
+        float t = attackProgress();
+        if (t < 0.3f || t > 0.8f) return 1f;
+        double bump = Math.sin(Math.PI * (t - 0.3f) / 0.5f);
+        return bump > 0.66 ? 1.06f : bump > 0.2 ? 1.03f : 1f;
+    }
+
+    private static float easeOut(float t) {
+        float u = Math.max(0f, Math.min(1f, t));
+        return 1f - (1f - u) * (1f - u);
+    }
+
+    private static float easeIn(float t) {
+        float u = Math.max(0f, Math.min(1f, t));
+        return u * u;
     }
 
     float defeatAlpha() {

@@ -284,8 +284,16 @@ public final class BattlePanel extends JPanel {
     private void paintOverlay(Graphics2D g) {
         String text = overlayText(snapshot);
         if (text.isEmpty()) return;
-        g.setColor(new Color(0, 0, 0, 150));
-        g.fillRect(16, 76, 928, 540);
+        // 제목·키 안내까지 화면 전체를 덮는다. 가운데 사각형만 덮으면 위아래가 밝게 남아 멈춘 것처럼 보이지 않았다
+        java.awt.Rectangle clip = g.getClipBounds();
+        g.setColor(new Color(4, 6, 16, snapshot.phase() == MatchPhase.PAUSED ? 178 : 130));
+        if (clip != null) g.fillRect(clip.x, clip.y, clip.width, clip.height);
+        else g.fillRect(-4000, -4000, 8000, 8000);
+        if (snapshot.phase() == MatchPhase.PAUSED) {
+            g.setColor(new Color(8, 12, 28, 246));
+            g.fillRoundRect(260 + 8, 250 + 8, 440 - 16, 160 - 16, 16, 16);
+            tetris.ui.theme.UiKit.paintFrame(g, tetris.ui.theme.UiKit.Tone.VIOLET, 260, 250, 440, 160);
+        }
         g.setColor(Color.WHITE);
         g.setFont(tetris.ui.theme.GameTheme.display(36));
         tetris.ui.theme.UiKit.drawInBox(g, text, new java.awt.Rectangle(80, 300, 800, 56), tetris.ui.theme.UiKit.Align.CENTER);

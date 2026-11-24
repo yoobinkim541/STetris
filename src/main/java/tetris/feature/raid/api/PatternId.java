@@ -48,4 +48,22 @@ public enum PatternId {
             case FIRE_BREATH -> "쓰레기 줄 2줄 (Lv.4부터 3줄). 협동은 둘 다, 솔로는 2배";
         };
     }
+
+    /** 예고 띠에 이름과 함께 늘 보이는 짧은 효과. 발동까지 남은 조각 동안 읽을 수 있다 */
+    public String shortEffect() {
+        return switch (this) {
+            case CLOUD -> "보드 일부 가림";
+            case SUMMON_BLOCK -> "회색 덩어리";
+            case ROCK_THROW -> "쓰레기 줄 2~3";
+            case PILLAR -> "회색 기둥 4칸";
+            case CURSE_BLOCKS -> "다음 2개 S/Z";
+            case SEAL_PREVIEW -> "미리보기·홀드 가림";
+            case OVERLOAD -> "낙하 2배속";
+            case CHAIN -> "쓰레기 줄 1";
+            case REVERSE -> "좌우 반대";
+            case SPLIT -> "미니 젤리로 분열";
+            case EARTHQUAKE -> "보드 1줄 상승";
+            case FIRE_BREATH -> "쓰레기 줄 여러 개";
+        };
+    }
 }

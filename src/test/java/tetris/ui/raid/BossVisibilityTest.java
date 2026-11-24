@@ -30,9 +30,11 @@ class BossVisibilityTest {
         assertTrue(motion.defeatAlpha() < 1f, "처치 연출이 진행 중이면 알파는 1보다 작다");
         for (int i = 0; i < 40; i++) motion.tick();
         assertEquals(1f, motion.defeatAlpha(), 0.001f, "연출이 끝나면 알파가 0에 머물면 안 된다");
+        assertTrue(motion.gone(), "처치한 보스는 다음 보스가 나올 때까지 다시 그리지 않는다 (카드 선택 중)");
 
         motion.note(BossId.STONE_GOLEM, 3, 258, 280, List.of(spawn(BossId.STONE_GOLEM)));
         assertEquals(1f, motion.defeatAlpha(), 0.001f);
+        assertTrue(!motion.gone(), "새 보스는 보인다");
     }
 
     @Test
