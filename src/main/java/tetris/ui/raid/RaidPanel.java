@@ -41,7 +41,9 @@ import tetris.ui.versus.BoardRenderer;
  * 보스 레이드 화면. 턱 그림이 위를 덮고, 보드는 화려한 틀 안에서 폭을 채운다.
  * 600×720 가상 화면은 창과 같은 비라서 세 크기에서 겹침 없이 커진다.
  */
-public final class RaidPanel extends JPanel {
+public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVeil {
+    /** 이번 그리기에서 화면 전체를 덮은 막 색. 전체 화면이면 Stage가 양옆에도 칠한다 */
+    private Color veil;
     static final int VW = 600;
     static final int VH = 720;
 
@@ -60,7 +62,9 @@ public final class RaidPanel extends JPanel {
     private final Scene scene = new Scene();
     private RaidSnapshot snapshot;
     private String guide = "";
-    private int cardSelection = 1;
+    /** 참가자별 카드 커서. 숨긴 커서는 -1 (이미 골랐거나 온라인 상대) */
+    private int[] cardCursors = {1};
+    private int hoverCard = -1;
     private int resultIndex;
     private boolean confirming;
     private boolean confirmYes;
@@ -92,6 +96,11 @@ public final class RaidPanel extends JPanel {
     private int originY;
     private Rectangle menuButton = new Rectangle();
     private Rectangle retryButton = new Rectangle();
+    private Rectangle resumeButton = new Rectangle();
+    private Rectangle quitButton = new Rectangle();
+    private Runnable onResume = () -> { };
+    private Runnable onQuit = () -> { };
+    private int pauseHover = -1;
     private final Rectangle cueTarget = new Rectangle();
     private final Rectangle cueLucky = new Rectangle();
     private final Rectangle cueScore = new Rectangle();
@@ -172,18 +181,14 @@ public final class RaidPanel extends JPanel {
         repaint();
     }
 
-    public void setCardSelection(int index) {
-        cardSelection = Math.max(0, Math.min(2, index));
+    public void setCardCursors(int[] cursors) {
+        cardCursors = cursors == null ? new int[0] : cursors.clone();
         repaint();
     }
 
-    public int cardSelection() {
-        return cardSelection;
-    }
-
-    /** 호버는 선택, 이미 고른 카드를 누르면 확정. 키 동작은 바꾸지 않는다 */
+    /** 호버는 커서 이동, 커서가 있는 카드를 누르면 확정. 누구의 커서인지는 컨트롤러가 정한다 */
     public void setCardPointer(BiConsumer<Integer, Boolean> pointer) {
-        cardPointer = pointer == null ? (index, confirm) -> { } : pointer;
+        cardPointer = pointer == null ? (index, click) -> { } : pointer;
     }
 
     public void setConfirm(boolean showing, boolean yes) {
@@ -199,6 +204,12 @@ public final class RaidPanel extends JPanel {
 
     public void setConfirmAction(Runnable cancel) {
         onCancelConfirm = cancel == null ? () -> setConfirm(false, false) : cancel;
+    }
+
+    /** 일시정지 상자의 계속·끝내기 버튼. 키와 같은 일을 한다 */
+    public void setPauseActions(Runnable resume, Runnable quit) {
+        onResume = resume == null ? () -> { } : resume;
+        onQuit = quit == null ? () -> { } : quit;
     }
 
     public void setResultLabels(String menu, String retry) {
@@ -274,9 +285,7 @@ public final class RaidPanel extends JPanel {
         if (snapshot.phase() == RaidPhase.CARD_PICK) {
             int hit = cardAt(vx, vy);
             if (hit < 0) return;
-            boolean confirm = hit == cardSelection;
-            cardSelection = hit;
-            cardPointer.accept(hit, confirm);
+            cardPointer.accept(hit, true);
             repaint();
             return;
         }
@@ -297,6 +306,11 @@ public final class RaidPanel extends JPanel {
         if (confirming) {
             if (menuButton.contains(vx, vy)) onMenu.run();
             else if (retryButton.contains(vx, vy)) onCancelConfirm.run();
+            return;
+        }
+        if (snapshot.phase() == RaidPhase.PAUSED) {
+            if (resumeButton.contains(vx, vy)) onResume.run();
+            else if (quitButton.contains(vx, vy)) onQuit.run();
         }
     }
 
@@ -308,10 +322,9 @@ public final class RaidPanel extends JPanel {
         if (snapshot.phase() == RaidPhase.CARD_PICK) {
             int hit = cardAt(vx, vy);
             hand = hit >= 0;
-            if (hit >= 0 && hit != cardSelection) {
-                cardSelection = hit;
-                cardPointer.accept(hit, false);
-                repaint();
+            if (hit != hoverCard) {
+                hoverCard = hit;
+                if (hit >= 0) cardPointer.accept(hit, false);
             }
         } else if (snapshot.phase() == RaidPhase.FINISHED) {
             if (menuButton.contains(vx, vy)) {
@@ -329,6 +342,13 @@ public final class RaidPanel extends JPanel {
             }
         } else if (confirming) {
             hand = menuButton.contains(vx, vy) || retryButton.contains(vx, vy);
+        } else if (snapshot.phase() == RaidPhase.PAUSED) {
+            int hit = resumeButton.contains(vx, vy) ? 0 : quitButton.contains(vx, vy) ? 1 : -1;
+            hand = hit >= 0;
+            if (hit != pauseHover) {
+                pauseHover = hit;
+                repaint();
+            }
         }
         setCursor(hand ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
     }
@@ -354,6 +374,7 @@ public final class RaidPanel extends JPanel {
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            veil = null;
             if (snapshot == null || getWidth() <= 0 || getHeight() <= 0) {
                 if (!paintBackdrop(g, getWidth(), getHeight())) stars.paint(g, getWidth(), getHeight());
                 return;
@@ -1610,27 +1631,66 @@ public final class RaidPanel extends JPanel {
         g.setColor(new Color(8, 12, 28, 238));
         g.fillRoundRect(24, panelY + 8, VW - 48, panelH - 16, 18, 18);
         UiKit.paintFrame(g, UiKit.Tone.VIOLET, 16, panelY, VW - 32, panelH);
-        String title = offer.chooser() == 0 ? "P1이 카드를 고릅니다" : "P2가 카드를 고릅니다";
+        boolean pair = offer.picks().length > 1;
+        String title = pair ? "두 사람 모두 카드를 한 장씩 고릅니다" : "카드를 고르세요";
         g.setFont(GameTheme.display(22));
         g.setColor(TEXT);
         GameTheme.drawCentered(g, title, VW / 2, panelY + 42);
-        String remain = "남은 시간  " + String.format("%.1f", offer.remainingMillis() / 1000.0) + "초";
-        g.setFont(GameTheme.fontFor(remain, 15, true));
+        String status = pair ? pickStatus(offer, 0) + "   ·   " + pickStatus(offer, 1)
+                : "남은 시간  " + String.format("%.1f", offer.remainingMillis() / 1000.0) + "초";
+        g.setFont(GameTheme.fontFor(status, 15, true));
         g.setColor(colorBlind ? A11yColors.YELLOW : new Color(0xFFE27A));
-        UiKit.drawCentered(g, remain, VW / 2, panelY + 66);
+        UiKit.drawCentered(g, status, VW / 2, panelY + 66);
         g.setFont(GameTheme.text(12, false));
         g.setColor(DIM);
-        UiKit.drawCentered(g, "좌우 이동 · 하드 드롭으로 확정", VW / 2, panelY + 86);
+        UiKit.drawCentered(g, pair ? "각자 좌우 이동 · 하드 드롭으로 확정 · 둘 다 고르면 시작"
+                : "좌우 이동 · 하드 드롭으로 확정", VW / 2, panelY + 86);
         int cardW = 166;
         int cardH = 204;
         int gap = 12;
         int x0 = (VW - (cardW * 3 + gap * 2)) / 2;
         int y0 = panelY + 122;
+        int[] picks = offer.picks();
         for (int i = 0; i < offer.cards().size() && i < 3; i++) {
             int x = x0 + i * (cardW + gap);
-            int y = i == cardSelection ? y0 - 6 : y0 + 6;
+            boolean selected = cursorOn(i);
+            int y = selected ? y0 - 6 : y0 + 6;
             scene.cards[i].setBounds(x, y, cardW, cardH);
-            paintCard(g, offer.cards().get(i), x, y, cardW, cardH, i == cardSelection);
+            paintCard(g, offer.cards().get(i), x, y, cardW, cardH, selected);
+            paintCardMarks(g, i, picks, pair, x, y, cardW, cardH);
+        }
+    }
+
+    private String pickStatus(RaidSnapshot.CardOffer offer, int player) {
+        return "P" + (player + 1) + (offer.picked(player) ? " 고름 ✓" : " 고르는 중");
+    }
+
+    private boolean cursorOn(int card) {
+        for (int cursor : cardCursors) if (cursor == card) return true;
+        return false;
+    }
+
+    /** 커서 위 "P1▼·P2▼", 고른 카드 아래 "P1 선택" 표시. 솔로는 기존 ▼만 */
+    private void paintCardMarks(Graphics2D g, int card, int[] picks, boolean pair, int x, int y, int w, int h) {
+        if (!pair) return;
+        StringBuilder over = new StringBuilder();
+        StringBuilder chose = new StringBuilder();
+        for (int p = 0; p < picks.length; p++) {
+            if (p < cardCursors.length && cardCursors[p] == card) over.append(over.isEmpty() ? "" : " ").append("P").append(p + 1);
+            if (picks[p] == card) chose.append(chose.isEmpty() ? "" : "·").append("P").append(p + 1);
+        }
+        g.setFont(GameTheme.text(13, true));
+        if (!over.isEmpty()) {
+            g.setColor(A11yColors.selected(colorBlind));
+            UiKit.drawCentered(g, over + " ▼", x + w / 2, y - 6);
+        }
+        if (!chose.isEmpty()) {
+            String label = chose + " 선택";
+            int lw = g.getFontMetrics().stringWidth(label) + 20;
+            g.setColor(new Color(20, 90, 60, 235));
+            g.fillRoundRect(x + (w - lw) / 2, y + h - 22, lw, 22, 11, 11);
+            g.setColor(Color.WHITE);
+            UiKit.drawCentered(g, label, x + w / 2, y + h - 6);
         }
     }
 
@@ -1644,7 +1704,7 @@ public final class RaidPanel extends JPanel {
         g.setColor(TEXT);
         UiKit.drawCentered(g, card.displayName(), x + w / 2, y + h - 74);
         drawDescription(g, card.description(), x + 14, y + h - 54, w - 28);
-        if (!selected) return;
+        if (!selected || cardCursors.length > 1) return; // 협동은 "P1 ▼"처럼 누구 커서인지 따로 쓴다
         g.setFont(GameTheme.text(14, true));
         g.setColor(A11yColors.selected(colorBlind));
         UiKit.drawCentered(g, "▼", x + w / 2, y - 6);
@@ -1723,7 +1783,8 @@ public final class RaidPanel extends JPanel {
         int x = 24;
         int y = 92;
         int w = VW - 48;
-        int h = 556;
+        boolean pair = snapshot.players().size() > 1;
+        int h = pair ? 578 : 556; // 두 사람이면 준비 표시 줄만큼 상자를 늘린다
         g.setColor(new Color(8, 12, 28, 244));
         g.fillRoundRect(x + 8, y + 8, w - 16, h - 16, 18, 18);
         UiKit.paintFrame(g, golden ? UiKit.Tone.MAGENTA : UiKit.Tone.VIOLET, x, y, w, h);
@@ -1789,7 +1850,7 @@ public final class RaidPanel extends JPanel {
 
         int barX = x + 30;
         int barW = w - 60;
-        int barY = y + h - 66;
+        int barY = y + h - (pair ? 84 : 66);
         double left = Math.min(1.0, Math.max(0, intro) / (double) RaidRules.INTRO_INFO_MILLIS);
         g.setColor(new Color(255, 255, 255, 40));
         g.fillRoundRect(barX, barY, barW, 8, 8, 8);
@@ -1798,7 +1859,17 @@ public final class RaidPanel extends JPanel {
         String footer = BossRoulette.secondsLeft(intro) + "초 뒤 시작  ·  " + introHint;
         g.setFont(GameTheme.fontFor(footer, 14, false));
         g.setColor(TEXT);
-        UiKit.drawCentered(g, footer, VW / 2, barY + 34);
+        UiKit.drawCentered(g, footer, VW / 2, barY + (pair ? 26 : 34));
+        if (pair) {
+            String ready = readyText(0) + "   ·   " + readyText(1);
+            g.setFont(GameTheme.fontFor(ready, 13, true));
+            g.setColor(colorBlind ? A11yColors.YELLOW : new Color(0xFFE27A));
+            UiKit.drawCentered(g, ready, VW / 2, barY + 46);
+        }
+    }
+
+    private String readyText(int player) {
+        return "P" + (player + 1) + (snapshot.introReadyFor(player) ? " 준비 완료 ✓" : " 읽는 중");
     }
 
     private void paintPatternRow(Graphics2D g, PatternId pattern, boolean signature, int level, int x, int y, int w) {
@@ -1851,17 +1922,22 @@ public final class RaidPanel extends JPanel {
         UiKit.drawCentered(g, hint, VW / 2, y + 28);
     }
 
-    /** 일시정지: 클래식 화면처럼 화면 전체를 어둡게 하고 가운데 상자에 상태와 키를 쓴다 */
+    /** 일시정지: 클래식 화면처럼 화면 전체를 어둡게 하고 가운데 상자에 상태·키·버튼을 둔다 */
     private void paintPause(Graphics2D g) {
         fillScreen(g, new Color(4, 6, 16, 178));
-        Rectangle box = solidBox(g, 380, 168);
+        int boxW = 420;
+        Rectangle box = solidBox(g, boxW, 212);
         g.setFont(GameTheme.display(34));
         g.setColor(TEXT);
-        GameTheme.drawCentered(g, "일시정지", VW / 2, box.y + 64);
+        GameTheme.drawCentered(g, "일시정지", VW / 2, box.y + 60);
         g.setFont(GameTheme.text(15, false));
         g.setColor(DIM);
-        UiKit.drawCentered(g, "일시정지 키로 다시 시작합니다", VW / 2, box.y + 104);
-        UiKit.drawCentered(g, "나가기 키로 레이드를 끝낼 수 있습니다", VW / 2, box.y + 130);
+        UiKit.drawCentered(g, "일시정지 키로 다시 시작합니다", VW / 2, box.y + 96);
+        UiKit.drawCentered(g, "나가기 키로 레이드를 끝낼 수 있습니다", VW / 2, box.y + 120);
+        resumeButton = new Rectangle(box.x + 28, box.y + 142, boxW / 2 - 40, 42);
+        quitButton = new Rectangle(VW / 2 + 12, box.y + 142, boxW / 2 - 40, 42);
+        paintChoice(g, resumeButton, "계속", pauseHover != 1);
+        paintChoice(g, quitButton, "끝내기", pauseHover == 1);
     }
 
     private void paintConfirm(Graphics2D g) {
@@ -1894,10 +1970,16 @@ public final class RaidPanel extends JPanel {
 
     /** 가상 화면 밖 여백(전체 화면의 좌우 띠)까지 포함해 창 전체를 덮는다 */
     private void fillScreen(Graphics2D g, Color color) {
+        veil = color;
         g.setColor(color);
         int left = (int) Math.floor(-originX / scale) - 8;
         int top = (int) Math.floor(-originY / scale) - 8;
         g.fillRect(left, top, (int) Math.ceil(getWidth() / scale) + 16, (int) Math.ceil(getHeight() / scale) + 16);
+    }
+
+    @Override
+    public Color screenVeil() {
+        return veil;
     }
 
     private void paintResult(Graphics2D g) {

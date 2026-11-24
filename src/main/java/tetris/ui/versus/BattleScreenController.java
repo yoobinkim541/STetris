@@ -168,6 +168,19 @@ public final class BattleScreenController implements AutoCloseable {
         dispatch(new PlayerCommand(PlayerId.ONE, GameAction.PAUSE, false, 0));
     }
 
+    /** 화면 구석 일시정지 아이콘과 일시정지 상자의 계속 버튼. 공용 일시정지 키와 같다 (키를 바꿔도 동작한다) */
+    public void togglePause() {
+        if (!accepts(GameAction.PAUSE)) return;
+        router.clearGameplayKeys();
+        pauseCommand();
+    }
+
+    /** 일시정지 상자의 나가기 버튼. 공용 나가기 키와 같다 */
+    public void quit() {
+        if (!accepts(GameAction.QUIT)) return;
+        send(new PlayerCommand(PlayerId.ONE, GameAction.QUIT, true, 0));
+    }
+
     public void focusLost() {
         if (closed) return;
         router.clearPressedKeys();

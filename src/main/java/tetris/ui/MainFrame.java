@@ -298,8 +298,15 @@ public class MainFrame extends JFrame {
         leaveFullscreen();
         applyLogicalCell(fitCellSize(size.cellPixels()));
         pack();
-        setLocationRelativeTo(null);
+        centerOnMonitor();
         restoreFocus();
+    }
+
+    /** 지금 창이 있는 모니터 가운데. 전체 화면을 끈 뒤 주 모니터로 튀지 않게 한다 */
+    private void centerOnMonitor() {
+        Rectangle area = usableBounds();
+        setLocation(area.x + Math.max(0, (area.width - getWidth()) / 2),
+                area.y + Math.max(0, (area.height - getHeight()) / 2));
     }
 
     /** F11·Alt+Enter. Esc는 그대로 둔다 */
@@ -321,10 +328,12 @@ public class MainFrame extends JFrame {
         applyLogicalCell(settings.getScreenSize().cellPixels());
         setBorderless(true, monitorBounds());
         appliedFullscreen = true;
+        stage.setMinimizeAction(() -> setExtendedState(ICONIFIED));
         restoreFocus();
     }
 
     private void leaveFullscreen() {
+        stage.setMinimizeAction(null);
         if (!appliedFullscreen && !isUndecorated()) return;
         setBorderless(false, null);
         appliedFullscreen = false;
@@ -356,7 +365,10 @@ public class MainFrame extends JFrame {
             setExtendedState(NORMAL);
             setResizable(true);
             if (target != null) setBounds(target);
-            if (show && !isVisible()) setVisible(true);
+            if (show && !isVisible()) {
+                setVisible(true);
+                toFront(); // 다시 만든 창이 다른 창 뒤로 가지 않게
+            }
             if (target != null && isDisplayable()) setBounds(target);
             setResizable(false);
             if (target != null && isDisplayable()) setBounds(target);
@@ -378,11 +390,24 @@ public class MainFrame extends JFrame {
     }
 
     private Rectangle monitorBounds() {
+        return new Rectangle(monitor().getBounds());
+    }
+
+    /** 지금 모니터에서 작업 표시줄을 뺀 영역 */
+    private Rectangle usableBounds() {
+        java.awt.GraphicsConfiguration gc = monitor();
+        Rectangle bounds = gc.getBounds();
+        Insets insets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(gc);
+        return new Rectangle(bounds.x + insets.left, bounds.y + insets.top,
+                bounds.width - insets.left - insets.right, bounds.height - insets.top - insets.bottom);
+    }
+
+    private java.awt.GraphicsConfiguration monitor() {
         java.awt.GraphicsConfiguration gc = getGraphicsConfiguration();
         if (gc == null) {
             gc = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration();
         }
-        return new Rectangle(gc.getBounds());
+        return gc;
     }
 
     private boolean onFullscreenKey(KeyEvent event) {
@@ -391,16 +416,14 @@ public class MainFrame extends JFrame {
         return true;
     }
 
+    /** 화면 구석 일시정지 아이콘. 키를 흉내 내지 않고 화면별 일시정지로 바로 보낸다 (일시정지 키를 바꿔도 동작) */
     private void pauseFromCorner() {
-        if (currentScreen == Screen.GAME) {
-            session.togglePause();
-            return;
+        switch (currentScreen) {
+            case GAME -> session.togglePause();
+            case RAID -> { if (raidController != null) raidController.togglePause(); }
+            case BATTLE -> { if (battleController != null) battleController.togglePause(); }
+            default -> { }
         }
-        java.awt.Component focus = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
-        if (focus == null) focus = this;
-        long when = System.currentTimeMillis();
-        focus.dispatchEvent(new KeyEvent(focus, KeyEvent.KEY_PRESSED, when, 0, KeyEvent.VK_P, 'P'));
-        focus.dispatchEvent(new KeyEvent(focus, KeyEvent.KEY_RELEASED, when, 0, KeyEvent.VK_P, 'P'));
     }
 
     private void restoreFocus() {
@@ -615,6 +638,7 @@ public class MainFrame extends JFrame {
                 }),
                 this::confirmBattleForfeit,
                 this::openBattleModes);
+        panel.setPauseActions(battleController::togglePause, battleController::quit);
     }
 
     /** viewer: P2P에서 이 PC가 조작하는 참가자. 로컬 대전이면 null */
@@ -706,6 +730,7 @@ public class MainFrame extends JFrame {
                     showScreen(Screen.P2P_RESULT);
                 }));
         battleController.setSoundFocus(viewer);
+        panel.setPauseActions(battleController::togglePause, battleController::quit);
         debugOverlay.refresh(); // 이제 대전 화면도 같은 줄을 받는다
     }
 
@@ -802,7 +827,7 @@ public class MainFrame extends JFrame {
         if (settings.isFullscreen()) return desired;
         if (!isDisplayable()) pack(); // 창 테두리 크기(insets)는 pack 이후에 알 수 있다
         Insets insets = getInsets();
-        Rectangle available = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        Rectangle available = usableBounds();
         int largestFit = largestFittingCell(available.width - insets.left - insets.right,
                 available.height - insets.top - insets.bottom);
         return scaledCellSize(desired, largestFit);

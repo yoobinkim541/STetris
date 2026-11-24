@@ -94,6 +94,12 @@ public final class RaidPayloads {
             payload.set("raceKills", intsJson(snapshot.raceKills()));
             payload.set("raceGauges", intsJson(snapshot.raceGauges()));
         }
+        boolean[] ready = snapshot.introReady();
+        if (ready.length > 0) {
+            int[] flags = new int[ready.length];
+            for (int i = 0; i < ready.length; i++) flags[i] = ready[i] ? 1 : 0;
+            payload.set("introReady", intsJson(flags));
+        }
         return new Message(MessageType.RAID_STATE, snapshot.raidId(), 0, payload);
     }
 
@@ -153,9 +159,12 @@ public final class RaidPayloads {
         }
         int[] raceKills = payload.has("raceKills") ? intsField(payload, "raceKills") : new int[0];
         int[] raceGauges = payload.has("raceGauges") ? intsField(payload, "raceGauges") : new int[0];
+        int[] readyFlags = payload.has("introReady") ? intsField(payload, "introReady") : new int[0];
+        boolean[] introReady = new boolean[readyFlags.length];
+        for (int i = 0; i < readyFlags.length; i++) introReady[i] = readyFlags[i] != 0;
         String id = raidId == null ? "raid" : raidId;
         return construct(() -> new RaidSnapshot(id, revision, mode, phase, boss, players, kills, elapsed, gauge,
-                offer, events, result, raceBosses, raceKills, raceGauges, intro));
+                offer, events, result, raceBosses, raceKills, raceGauges, intro, introReady));
     }
 
     private static ObjectNode bossJson(RaidSnapshot.BossView boss) {
@@ -259,8 +268,8 @@ public final class RaidPayloads {
 
     private static ObjectNode offerJson(RaidSnapshot.CardOffer offer) {
         ObjectNode node = WireFormat.MAPPER.createObjectNode()
-                .put("chooser", offer.chooser())
                 .put("remainingMillis", offer.remainingMillis());
+        node.set("picks", intsJson(offer.picks()));
         ArrayNode cards = node.putArray("cards");
         for (CardId card : offer.cards()) cards.add(card.name());
         return node;
@@ -280,9 +289,9 @@ public final class RaidPayloads {
                 throw new ProtocolException(ErrorCode.INVALID_FIELD, "cards");
             }
         }
-        int chooser = intField(object, "chooser");
+        int[] picks = intsField(object, "picks");
         long remaining = longField(object, "remainingMillis");
-        return construct(() -> new RaidSnapshot.CardOffer(cards, chooser, remaining));
+        return construct(() -> new RaidSnapshot.CardOffer(cards, picks, remaining));
     }
 
     private static ArrayNode eventsJson(List<RaidEvent> events) {

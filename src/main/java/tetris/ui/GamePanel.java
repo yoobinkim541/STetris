@@ -30,7 +30,7 @@ import tetris.feature.setting.Settings;
  *
  * 배치 (c = 셀 크기, p = 여백 c/2): [p][보드 10c][p][정보 6c][p] x [p][보드 20c][p]
  */
-public class GamePanel extends JPanel implements GameListener {
+public class GamePanel extends JPanel implements GameListener, tetris.ui.input.ScreenVeil {
     private static final int INFO_COLUMNS = 6;
     private static final int NEXT_BOX_ROWS = 4;
 
@@ -109,6 +109,11 @@ public class GamePanel extends JPanel implements GameListener {
 
     public java.awt.Rectangle keyGuideBounds() {
         return tetris.ui.theme.SoloLayout.of(cellSize).guide;
+    }
+
+    @Override
+    public java.awt.Color screenVeil() {
+        return pausePanel.isVisible() ? PausePanel.VEIL : null;
     }
 
     @Override

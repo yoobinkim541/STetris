@@ -2,7 +2,9 @@ package tetris.ui.raid;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import javax.swing.AbstractAction;
@@ -35,18 +37,22 @@ public final class RaidScreenController implements AutoCloseable {
     private final Runnable onMenu;
     private final Runnable onRetry;
     private final JRootPane root;
-    private final Set<GameAction> cardHeld = EnumSet.noneOf(GameAction.class);
+    /** 참가자별로 누르고 있는 카드 키. 한 화면 협동은 두 사람이 같은 동작을 다른 키로 누른다 */
+    private final List<Set<GameAction>> cardHeld = List.of(EnumSet.noneOf(GameAction.class), EnumSet.noneOf(GameAction.class));
     private BattleInputRouter battleRouter;
     private SoloInputRouter soloRouter;
     private BattleClient.Subscription subscription;
     private RaidSnapshot current;
-    private int cardIndex = 1;
+    /** 참가자별 카드 커서. 협동은 두 사람이 각자 고른다 */
+    private final int[] cardIndex = {1, 1};
     private boolean pausedForConfirm;
     private boolean confirming;
     private boolean confirmYes;
     private boolean closed;
     private long sequence;
     private final PlayerId skipAs;
+    /** 온라인에서 이 PC가 조작하는 참가자. 한 화면 플레이는 null */
+    private final PlayerId viewer;
 
     public RaidScreenController(JRootPane root, RaidClient client, RaidPanel panel, KeyMap soloKeys, boolean solo,
                                 ControlStyle style, Runnable onMenu, Runnable onRetry) {
@@ -63,11 +69,13 @@ public final class RaidScreenController implements AutoCloseable {
         this.onRetry = Objects.requireNonNull(onRetry, "onRetry");
         Objects.requireNonNull(style, "style");
         this.skipAs = onlineViewer == null ? PlayerId.ONE : onlineViewer;
+        this.viewer = onlineViewer;
         panel.setGuide(onlineViewer != null ? onlineGuide() : guide(solo, soloKeys));
         panel.setResultActions(this::goMenu, this::goRetry);
         panel.setConfirmAction(this::cancelConfirm);
+        panel.setPauseActions(this::togglePause, this::beginQuit);
         panel.setCardPointer(this::onCardPointer);
-        panel.setIntroControls(introHint(solo, soloKeys, onlineViewer != null), this::skipIntro);
+        panel.setIntroControls(introHint(solo, soloKeys, onlineViewer != null), () -> skipIntro(skipAs));
         try {
             if (onlineViewer != null) {
                 battleRouter = new BattleInputRouter(root, BattleKeyMap.online(), this::onCommand, this::accepts);
@@ -96,9 +104,9 @@ public final class RaidScreenController implements AutoCloseable {
         return new RaidScreenController(root, client, panel, new KeyMap(), false, style, onMenu, onRetry, viewer);
     }
 
-    /** 테스트·결과 버튼이 고른 카드를 본다 */
-    public int cardSelection() {
-        return cardIndex;
+    /** 테스트·결과 버튼이 그 참가자가 고르고 있는 카드를 본다 */
+    public int cardSelection(PlayerId player) {
+        return cardIndex[player.ordinal()];
     }
 
     public void focusLost() {
@@ -135,13 +143,12 @@ public final class RaidScreenController implements AutoCloseable {
         GameSounds.SHARED.onRaid(snapshot);
         boolean newOffer = snapshot.phase() == RaidPhase.CARD_PICK && (previous == null
                 || previous.phase() != RaidPhase.CARD_PICK
-                || previous.offer().chooser() != snapshot.offer().chooser()
-                || !previous.offer().cards().equals(snapshot.offer().cards()));
+                || !snapshot.offer().continues(previous.offer()));
         if (newOffer) {
-            cardIndex = 1;
-            cardHeld.clear();
+            Arrays.fill(cardIndex, 1);
+            for (Set<GameAction> held : cardHeld) held.clear();
         }
-        panel.setCardSelection(cardIndex);
+        panel.setCardCursors(cardCursors(snapshot));
         panel.setSnapshot(snapshot);
         if (snapshot.phase() == RaidPhase.FINISHED) {
             closeGameplayKeys();
@@ -183,31 +190,55 @@ public final class RaidScreenController implements AutoCloseable {
         client.send(new PlayerCommand(command.playerId(), command.action(), command.pressed(), sequence++));
     }
 
+    /** 한 화면이면 누른 키의 참가자가, 온라인이면 이 PC의 참가자가 자기 카드를 고른다 */
     private void handleCard(PlayerCommand command) {
-        if (current.offer() == null || command.playerId().ordinal() != current.offer().chooser()) return;
+        RaidSnapshot.CardOffer offer = current.offer();
+        int player = viewer != null ? viewer.ordinal() : command.playerId().ordinal();
+        if (offer == null || player >= offer.picks().length || offer.picked(player)) return;
+        Set<GameAction> held = cardHeld.get(player);
         if (!command.pressed()) {
-            cardHeld.remove(command.action());
+            held.remove(command.action());
             return;
         }
-        if (!cardHeld.add(command.action())) return;
+        if (!held.add(command.action())) return;
         int next = switch (command.action()) {
-            case MOVE_LEFT -> cardIndex - 1;
-            case MOVE_RIGHT -> cardIndex + 1;
+            case MOVE_LEFT -> cardIndex[player] - 1;
+            case MOVE_RIGHT -> cardIndex[player] + 1;
             case HARD_DROP -> {
-                client.pickCard(command.playerId(), cardIndex);
-                yield cardIndex;
+                client.pickCard(PlayerId.values()[player], cardIndex[player]);
+                yield cardIndex[player];
             }
-            default -> cardIndex;
+            default -> cardIndex[player];
         };
-        cardIndex = Math.max(0, Math.min(2, next));
-        panel.setCardSelection(cardIndex);
+        cardIndex[player] = Math.max(0, Math.min(2, next));
+        panel.setCardCursors(cardCursors(current));
     }
 
-    private void onCardPointer(int index, boolean confirm) {
+    /**
+     * 마우스는 한 사람 몫이다: 온라인이면 이 PC의 참가자, 한 화면이면 P1. P2는 자기 키로 고른다.
+     * (마우스가 "아직 안 고른 사람"을 따라가면 한 사람이 두 번 눌러 두 사람 몫을 채울 수 있었다)
+     * 커서가 있는 카드를 누르면 확정
+     */
+    private void onCardPointer(int index, boolean click) {
         if (closed || current == null || current.phase() != RaidPhase.CARD_PICK || current.offer() == null) return;
-        cardIndex = Math.max(0, Math.min(2, index));
-        panel.setCardSelection(cardIndex);
-        if (confirm) client.pickCard(current.offer().chooser() == 0 ? PlayerId.ONE : PlayerId.TWO, cardIndex);
+        int player = viewer != null ? viewer.ordinal() : 0;
+        if (current.offer().picked(player)) return;
+        int card = Math.max(0, Math.min(2, index));
+        if (click && cardIndex[player] == card) client.pickCard(PlayerId.values()[player], card);
+        cardIndex[player] = card;
+        panel.setCardCursors(cardCursors(current));
+    }
+
+    /** 화면에 보일 커서. 이미 고른 사람과, 온라인에서 상대의 커서는 숨긴다(-1) */
+    private int[] cardCursors(RaidSnapshot snapshot) {
+        RaidSnapshot.CardOffer offer = snapshot.offer();
+        int count = offer == null ? snapshot.players().size() : offer.picks().length;
+        int[] cursors = new int[count];
+        for (int i = 0; i < count; i++) {
+            boolean mine = viewer == null || viewer.ordinal() == i;
+            cursors[i] = mine && (offer == null || !offer.picked(i)) ? cardIndex[i] : -1;
+        }
+        return cursors;
     }
 
     private void handleConfirm(PlayerCommand command) {
@@ -241,22 +272,25 @@ public final class RaidScreenController implements AutoCloseable {
             return;
         }
         if (current != null && current.phase() == RaidPhase.BOSS_INTRO) {
-            skipIntro();
+            skipIntro(solo ? PlayerId.ONE : PlayerId.TWO); // 한 화면 협동에서 Enter는 P2 키다
             return;
         }
         if (!solo && current != null && current.phase() == RaidPhase.PLAYING) client.ultimate(PlayerId.TWO);
     }
 
-    /** 엔진이 하드 드롭으로 소개를 건너뛴다. 룰렛이 도는 동안은 엔진이 무시한다 */
-    private void skipIntro() {
+    /**
+     * 소개 건너뛰기. 클릭은 온라인이면 이 PC의 참가자, 한 화면이면 P1이고, Enter는 P2다.
+     * 한 사람이 같은 입력을 두 번 눌러 두 사람 몫의 준비를 채우지 못한다. 룰렛 중에는 엔진이 무시한다
+     */
+    private void skipIntro(PlayerId who) {
         if (closed || confirming || current == null || current.phase() != RaidPhase.BOSS_INTRO) return;
-        client.send(new PlayerCommand(skipAs, GameAction.HARD_DROP, true, sequence++));
-        client.send(new PlayerCommand(skipAs, GameAction.HARD_DROP, false, sequence++));
+        client.send(new PlayerCommand(who, GameAction.HARD_DROP, true, sequence++));
+        client.send(new PlayerCommand(who, GameAction.HARD_DROP, false, sequence++));
     }
 
     static String introHint(boolean solo, KeyMap keys, boolean online) {
-        if (online) return "하드 드롭으로 바로 시작";
-        if (!solo) return "하드 드롭 또는 Enter로 바로 시작";
+        if (online) return "두 사람 모두 하드 드롭을 누르면 바로 시작";
+        if (!solo) return "두 사람 모두 하드 드롭(또는 Enter)을 누르면 바로 시작";
         KeyMap map = keys == null ? new KeyMap() : keys;
         return Messages.keyName(map, GameAction.HARD_DROP) + " 또는 Enter로 바로 시작";
     }
@@ -286,6 +320,12 @@ public final class RaidScreenController implements AutoCloseable {
             pausedForConfirm = false;
             sendPause();
         }
+    }
+
+    /** 화면 구석 일시정지 아이콘과 일시정지 상자의 계속 버튼. 일시정지 키와 같다 (키를 바꿔도 동작한다) */
+    public void togglePause() {
+        if (closed || current == null || confirming || !accepts(GameAction.PAUSE)) return;
+        sendPause();
     }
 
     private void sendPause() {

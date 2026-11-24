@@ -12,7 +12,7 @@ import tetris.feature.versus.api.PlayerId;
 import tetris.feature.versus.api.VersusRules;
 
 /** One reusable two-player view. Owns no engine, socket or key bindings. EDT confined. */
-public final class BattlePanel extends JPanel {
+public final class BattlePanel extends JPanel implements tetris.ui.input.ScreenVeil {
     private final BoardRenderer renderer;
     private final boolean colorBlind;
     private final tetris.ui.fx.StarfieldBackground stars;
@@ -54,11 +54,22 @@ public final class BattlePanel extends JPanel {
         this.guide = Objects.requireNonNull(guide);
         stars.onFrame(this::tickFx);
         getAccessibleContext().setAccessibleDescription(guide);
+        java.awt.event.MouseAdapter pointer = new java.awt.event.MouseAdapter() {
+            @Override public void mousePressed(java.awt.event.MouseEvent e) {
+                if (e.getButton() == java.awt.event.MouseEvent.BUTTON1) click(e.getX(), e.getY());
+            }
+            @Override public void mouseMoved(java.awt.event.MouseEvent e) { hoverPause(e.getX(), e.getY()); }
+        };
+        addMouseListener(pointer);
+        addMouseMotionListener(pointer);
     }
     private int comboOne;
     private int comboTwo;
     private int filledOne = -1;
     private int filledTwo = -1;
+    private Runnable onResume = () -> { };
+    private Runnable onQuit = () -> { };
+    private int pauseHover = -1;
     public String modeLabel() { return modeLabel; }
     /** 보드 옆에 각자의 키를 크게 그린다 (S12-B1). 없으면 화면 아래 한 줄 안내만 쓴다 */
     public void setKeys(BattleKeyMap keys) { this.keys = Objects.requireNonNull(keys); repaint(); }
@@ -162,6 +173,13 @@ public final class BattlePanel extends JPanel {
         String attack = "회색 X = 공격으로 올라온 줄   대기열: 위→아래 순서로 들어옴 (최대 " + VersusRules.MAX_PENDING_ROWS + "줄)";
         if (mode != null && !mode.itemsEnabled()) return attack;
         return attack + "\n아이템: L 줄 삭제 · B 폭탄 · D 점수 2배 · S 느리게 · W 무게추";
+    }
+
+    /** 일시정지·카운트다운·끝 막. 막이 없으면 null */
+    @Override
+    public Color screenVeil() {
+        if (snapshot == null || overlayText(snapshot).isEmpty()) return null;
+        return new Color(4, 6, 16, snapshot.phase() == MatchPhase.PAUSED ? 178 : 130);
     }
 
     /** 현재 상태에서 보드 위에 크게 띄울 문구. 없으면 빈 문자열 */
@@ -286,13 +304,15 @@ public final class BattlePanel extends JPanel {
         if (text.isEmpty()) return;
         // 제목·키 안내까지 화면 전체를 덮는다. 가운데 사각형만 덮으면 위아래가 밝게 남아 멈춘 것처럼 보이지 않았다
         java.awt.Rectangle clip = g.getClipBounds();
-        g.setColor(new Color(4, 6, 16, snapshot.phase() == MatchPhase.PAUSED ? 178 : 130));
+        g.setColor(screenVeil());
         if (clip != null) g.fillRect(clip.x, clip.y, clip.width, clip.height);
         else g.fillRect(-4000, -4000, 8000, 8000);
         if (snapshot.phase() == MatchPhase.PAUSED) {
             g.setColor(new Color(8, 12, 28, 246));
-            g.fillRoundRect(260 + 8, 250 + 8, 440 - 16, 160 - 16, 16, 16);
-            tetris.ui.theme.UiKit.paintFrame(g, tetris.ui.theme.UiKit.Tone.VIOLET, 260, 250, 440, 160);
+            g.fillRoundRect(250 + 8, 236 + 8, 460 - 16, 222 - 16, 16, 16);
+            tetris.ui.theme.UiKit.paintFrame(g, tetris.ui.theme.UiKit.Tone.VIOLET, 250, 236, 460, 222);
+            paintPauseButton(g, RESUME_BUTTON, "계속", pauseHover != 1);
+            paintPauseButton(g, QUIT_BUTTON, "나가기", pauseHover == 1);
         }
         g.setColor(Color.WHITE);
         g.setFont(tetris.ui.theme.GameTheme.display(36));
@@ -319,6 +339,52 @@ public final class BattlePanel extends JPanel {
             g.setFont(tetris.ui.theme.GameTheme.text(16, false));
             tetris.ui.theme.UiKit.drawInBox(g, hint, new java.awt.Rectangle(40, 364, 880, 28), tetris.ui.theme.UiKit.Align.CENTER);
         }
+    }
+
+    private static final java.awt.Rectangle RESUME_BUTTON = new java.awt.Rectangle(290, 402, 180, 40);
+    private static final java.awt.Rectangle QUIT_BUTTON = new java.awt.Rectangle(490, 402, 180, 40);
+
+    private void paintPauseButton(Graphics2D g, java.awt.Rectangle box, String label, boolean selected) {
+        tetris.ui.theme.UiKit.paintButton(g, selected, box.x, box.y, box.width, box.height, colorBlind,
+                tetris.ui.theme.UiKit.pulse());
+        g.setFont(tetris.ui.theme.GameTheme.display(16));
+        g.setColor(Color.WHITE);
+        tetris.ui.theme.UiKit.drawInAsset(g, tetris.ui.theme.UiKit.AssetSlot.BUTTON, box, label,
+                tetris.ui.theme.UiKit.Align.CENTER, selected);
+    }
+
+    /** 일시정지 상자의 계속·나가기 버튼. 키와 같은 일을 한다 */
+    public void setPauseActions(Runnable resume, Runnable quit) {
+        onResume = resume == null ? () -> { } : resume;
+        onQuit = quit == null ? () -> { } : quit;
+    }
+
+    /** 화면 좌표의 클릭. 일시정지 중이면 버튼을 누른다 */
+    void click(int x, int y) {
+        int hit = pauseHit(x, y);
+        if (hit == 0) onResume.run();
+        else if (hit == 1) onQuit.run();
+    }
+
+    private void hoverPause(int x, int y) {
+        int hit = pauseHit(x, y);
+        setCursor(hit >= 0 ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
+        if (hit != pauseHover) {
+            pauseHover = hit;
+            repaint();
+        }
+    }
+
+    /** 0 계속, 1 나가기, -1 없음 */
+    private int pauseHit(int x, int y) {
+        if (snapshot == null || snapshot.phase() != MatchPhase.PAUSED) return -1;
+        double scale = designScale(getWidth(), getHeight());
+        if (scale <= 0) return -1;
+        double dx = (x - designOrigin(getWidth(), 960, scale)) / scale;
+        double dy = (y - designOrigin(getHeight(), 720, scale)) / scale;
+        if (RESUME_BUTTON.contains(dx, dy)) return 0;
+        if (QUIT_BUTTON.contains(dx, dy)) return 1;
+        return -1;
     }
     public static final int BOARD_CELL = 24;
     public static final int QUEUE_CELL = 12;

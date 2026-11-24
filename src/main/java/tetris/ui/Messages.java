@@ -94,7 +94,7 @@ public class Messages {
         TEXT.put("settings.disabled", "끔");
         TEXT.put("settings.on", "ON");
         TEXT.put("settings.off", "OFF");
-        TEXT.put("settings.pressKey", "새 키를 누르세요 (Esc 취소)");
+        TEXT.put("settings.pressKey", "새 키를 누르세요 (Esc 또는 클릭으로 취소)");
         TEXT.put("settings.keyChanged", "변경했습니다");
         TEXT.put("settings.reservedKey", "사용할 수 없는 키입니다");
         TEXT.put("settings.duplicateKey", "이미 [%s]에 사용 중입니다");

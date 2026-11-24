@@ -68,7 +68,7 @@ public final class RaidCapture {
         RaidPanel panel = new RaidPanel(colorBlind);
         panel.setSnapshot(snapshot);
         panel.setGuide("←/→ 이동 · ↑/↓ 회전 · R 필살");
-        panel.setCardSelection(1);
+        panel.setCardCursors(snapshot.players().size() > 1 ? new int[] {1, 2} : new int[] {1});
         return panel;
     }
 

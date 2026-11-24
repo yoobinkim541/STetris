@@ -299,19 +299,28 @@ public final class P2pLobbyPanel extends JPanel {
         }
     }
 
-    /** 클릭은 Enter와 같다. 글자 칸만 포커스를 받고, 나머지는 패널 포커스를 유지한다 */
+    /** 클릭은 Enter와 같다. 글자 칸만 포커스를 받고, 나머지는 패널 포커스를 유지한다. ◀ 값 ▶ 칸은 왼쪽 절반이 이전, 오른쪽 절반이 다음 */
     private void press(MouseEvent e) {
         Hit hit = hitAt(e);
         if (hit == null) return;
         selectedId = hit.id();
         if (hit.text()) openEditor(hit);
-        else {
+        else if (isChoice(hit.id())) {
+            closeEditor();
+            Point virtual = space().toVirtual(e.getX(), e.getY());
+            cycle(virtual.x < hit.bounds().getCenterX() ? -1 : 1, hit.id());
+            requestFocusInWindow();
+        } else {
             closeEditor();
             activate(hit.id());
             requestFocusInWindow();
         }
         e.consume();
         repaint();
+    }
+
+    private static boolean isChoice(String id) {
+        return "vis".equals(id) || "mode".equals(id) || "wait-mode".equals(id) || "recent".equals(id);
     }
     @Override
     protected void processKeyEvent(KeyEvent e) {
@@ -344,12 +353,8 @@ public final class P2pLobbyPanel extends JPanel {
             repaint();
             return;
         }
-        if (dx < 0 && ("vis".equals(hit.id()) || "mode".equals(hit.id()) || "wait-mode".equals(hit.id()) || "recent".equals(hit.id()))) {
-            cycle(-1, hit.id());
-            return;
-        }
-        if (dx > 0 && ("vis".equals(hit.id()) || "mode".equals(hit.id()) || "wait-mode".equals(hit.id()) || "recent".equals(hit.id()))) {
-            cycle(1, hit.id());
+        if (dx != 0 && isChoice(hit.id())) {
+            cycle(dx, hit.id());
             return;
         }
         String next = dy < 0 ? hit.up() : dy > 0 ? hit.down() : dx < 0 ? hit.left() : hit.right();
@@ -366,9 +371,12 @@ public final class P2pLobbyPanel extends JPanel {
         switch (id) {
             case "vis" -> createPublic = !createPublic;
             case "mode" -> createModeIndex = Math.floorMod(createModeIndex + delta, RelayRoomMode.values().length);
-            case "wait-mode" -> modeBox.setSelectedIndex(Math.floorMod(modeBox.getSelectedIndex() + delta, modeBox.getItemCount()));
+            case "wait-mode" -> {
+                if (!modeBox.isEnabled() || modeBox.getItemCount() == 0) return;
+                modeBox.setSelectedIndex(Math.floorMod(modeBox.getSelectedIndex() + delta, modeBox.getItemCount()));
+            }
             case "recent" -> {
-                if (recentBox.getItemCount() == 0) return;
+                if (!recentBox.isEnabled() || recentBox.getItemCount() == 0) return;
                 int index = Math.floorMod(recentBox.getSelectedIndex() + delta, recentBox.getItemCount());
                 recentBox.setSelectedIndex(index);
             }
@@ -399,7 +407,7 @@ public final class P2pLobbyPanel extends JPanel {
                 Hit hit = scene().byId(id);
                 if (hit != null) openEditor(hit);
             }
-            case "vis" -> createPublic = !createPublic;
+            case "vis", "mode", "wait-mode", "recent" -> cycle(1, id);
             default -> {
                 if (id.startsWith("room-")) joinRow(Integer.parseInt(id.substring(5)));
             }

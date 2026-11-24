@@ -332,8 +332,7 @@ public final class GameSounds {
 
     private static boolean newOffer(RaidSnapshot prev, RaidSnapshot next) {
         if (prev == null || prev.phase() != RaidPhase.CARD_PICK || prev.offer() == null) return true;
-        return prev.offer().chooser() != next.offer().chooser()
-                || !prev.offer().cards().equals(next.offer().cards());
+        return !next.offer().continues(prev.offer());
     }
 
     private static boolean holdChanged(Block before, Block after) {

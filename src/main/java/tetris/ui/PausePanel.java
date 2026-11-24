@@ -8,6 +8,8 @@ import javax.swing.JPanel;
 
 /** Pause 오버레이: Resume / Restart / Quit to Main Menu (PAU-2). GamePanel 위에 겹쳐 그린다. */
 public class PausePanel extends JPanel {
+    /** 게임 화면 전체를 덮는 막. 전체 화면이면 Stage가 양옆에도 칠한다 */
+    static final java.awt.Color VEIL = new java.awt.Color(0, 0, 0, 230);
     private final List<MenuItem> items;
     private int selected;
     private String keyGuide = "";
@@ -58,7 +60,7 @@ public class PausePanel extends JPanel {
         int w = getWidth();
         int h = getHeight();
         int unit = Theme.unit(h);
-        g2.setColor(new java.awt.Color(0, 0, 0, 230));
+        g2.setColor(VEIL);
         g2.fillRect(0, 0, w, h);
         int inset = tetris.ui.theme.GameTheme.snap8(Math.max(16, unit * 2));
         int boxW = Math.min(w - inset * 2, tetris.ui.theme.GameTheme.snap8(unit * 18));

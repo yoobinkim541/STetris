@@ -103,8 +103,10 @@ public final class RaidEngine {
     private boolean[] chainCleared = new boolean[2];
     private int reviveCost = RaidRules.REVIVE_LINES;
     private int pendingOffers;
-    private int offerSerial;
-    private int chooser;
+    /** 참가자별로 고른 카드 번호. 아직 안 골랐으면 -1 */
+    private int[] picks = new int[0];
+    /** 소개 중 참가자별로 건너뛰기를 눌렀는지. 모두 눌러야 소개가 일찍 끝난다 */
+    private boolean[] introReady = new boolean[0];
     private long offerLeft;
     private List<CardId> offer;
     private RaidSnapshot.Result result;
@@ -223,7 +225,8 @@ public final class RaidEngine {
             raceAdvanced = false;
             resumePlaying();
         }
-        if (phase == RaidPhase.CARD_PICK && offerLeft <= 0) applyPick(chooser, 1);
+        // 솔로만 제한 시간이 있다. 협동은 두 사람이 모두 고를 때까지 기다린다
+        if (phase == RaidPhase.CARD_PICK && count == 1 && offerLeft <= 0) applyPick(0, 1);
         if (phase == RaidPhase.PLAYING) runDue(now);
         drainCommands();
         if (phase == RaidPhase.FINISHED) return;
@@ -295,9 +298,11 @@ public final class RaidEngine {
                 continue;
             }
             if (phase == RaidPhase.BOSS_INTRO) {
-                // 룰렛이 도는 동안은 결과를 보여 주고, 능력 소개부터 하드 드롭으로 건너뛴다
+                // 룰렛이 도는 동안은 결과를 보여 주고, 능력 소개부터 하드 드롭으로 건너뛴다.
+                // 둘이면 두 사람이 모두 눌러야 건너뛴다 (한 사람이 읽는 중에 끊기지 않게)
                 if (action == GameAction.HARD_DROP && introLeft <= RaidRules.INTRO_INFO_MILLIS) {
-                    endIntro(RaidRules.COUNTDOWN_MILLIS);
+                    introReady[i] = true;
+                    if (allIntroReady()) endIntro(RaidRules.COUNTDOWN_MILLIS);
                 }
                 continue;
             }
@@ -663,10 +668,12 @@ public final class RaidEngine {
 
     private boolean applyPick(int player, int cardIndex) {
         if (phase != RaidPhase.CARD_PICK || offer == null) return false;
-        if (player != chooser || cardIndex < 0 || cardIndex > 2) return false;
+        if (player < 0 || player >= count || picks[player] >= 0 || cardIndex < 0 || cardIndex > 2) return false;
+        picks[player] = cardIndex;
         CardId card = offer.get(cardIndex);
         events.add(new RaidEvent(RaidEvent.Type.CARD_PICKED, player, card.ordinal()));
         applyCard(player, card);
+        for (int pick : picks) if (pick < 0) return true;
         offer = null;
         pendingOffers--;
         if (pendingOffers > 0) beginOffer();
@@ -693,8 +700,8 @@ public final class RaidEngine {
         List<CardId> deck = new ArrayList<>(List.of(CardId.values()));
         Collections.shuffle(deck, raidRandom);
         offer = List.of(deck.get(0), deck.get(1), deck.get(2));
-        chooser = count == 1 ? 0 : Math.floorMod(offerSerial, 2);
-        offerSerial++;
+        picks = new int[count];
+        Arrays.fill(picks, -1);
         offerLeft = RaidRules.CARD_PICK_MILLIS;
         phase = RaidPhase.CARD_PICK;
         for (GameSession session : sessions) {
@@ -716,7 +723,13 @@ public final class RaidEngine {
             if (session.getState() == GameState.PLAYING || session.getState() == GameState.CLEARING) session.pause();
         }
         introLeft = RaidRules.INTRO_MILLIS;
+        introReady = new boolean[count];
         phase = RaidPhase.BOSS_INTRO;
+    }
+
+    private boolean allIntroReady() {
+        for (boolean ready : introReady) if (!ready) return false;
+        return true;
     }
 
     private void endIntro(long countdown) {
@@ -866,7 +879,7 @@ public final class RaidEngine {
         List<RaidSnapshot.PlayerView> players = new ArrayList<>();
         for (int i = 0; i < count; i++) players.add(view(i));
         RaidSnapshot.CardOffer cardOffer = phase == RaidPhase.CARD_PICK && offer != null
-                ? new RaidSnapshot.CardOffer(offer, chooser, Math.max(0, offerLeft)) : null;
+                ? new RaidSnapshot.CardOffer(offer, picks, count == 1 ? Math.max(0, offerLeft) : -1) : null;
         RaidPhase shown = phase;
         if (shown == RaidPhase.CARD_PICK && cardOffer == null) shown = RaidPhase.PLAYING;
         RaidSnapshot.BossView boss = bossView();
@@ -885,7 +898,8 @@ public final class RaidEngine {
         }
         return new RaidSnapshot(raidId, revision, config.mode(), shown, boss, players, shownKills, elapsed,
                 shownGauge, cardOffer, List.copyOf(events), shown == RaidPhase.FINISHED ? result : null,
-                raceBosses, raceKills, raceGauges, shown == RaidPhase.BOSS_INTRO ? Math.max(0, introLeft) : 0);
+                raceBosses, raceKills, raceGauges, shown == RaidPhase.BOSS_INTRO ? Math.max(0, introLeft) : 0,
+                shown == RaidPhase.BOSS_INTRO ? introReady : new boolean[0]);
     }
 
     private RaidSnapshot.BossView bossView() {
