@@ -39,7 +39,9 @@ class PatternEffectTest {
         assertEquals(4, seal.remaining);
         assertEquals(2, apply(PatternId.SEAL_PREVIEW, 1, 2, false).remaining);
         Harness overload = apply(PatternId.OVERLOAD, 1, 0, false);
-        assertEquals(2.0, overload.session.gravityMultiplier());
+        int normal = overload.lastInterval;
+        overload.session.hardDrop();
+        assertEquals(normal / 2, overload.lastInterval, "과부하는 다음 조각부터 낙하 간격을 절반(속도 2배)으로 줄인다");
         assertEquals(5, overload.remaining);
         assertEquals(2, apply(PatternId.OVERLOAD, 1, 2, false).remaining);
         Harness chain = apply(PatternId.CHAIN, 1, 0, false);
@@ -116,13 +118,14 @@ class PatternEffectTest {
 
     private static final class Harness implements PatternContext {
         final GameSession session = new GameSession(OBlock::new, new tetris.feature.game.GameClock() {
-            public void start(int intervalMillis) { }
+            public void start(int intervalMillis) { lastInterval = intervalMillis; }
             public void stop() { }
         }, new GameListener() {
             public void onChanged(GameSnapshot state) { }
             public void onGameOver(GameSnapshot state) { }
         });
         final int level;
+        int lastInterval;
         final int blockLines;
         final boolean coop;
         final Random random = new Random(3);

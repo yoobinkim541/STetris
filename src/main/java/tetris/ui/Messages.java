@@ -62,7 +62,7 @@ public class Messages {
 
         TEXT.put("gameOver.title", "GAME OVER");
 
-        TEXT.put("name.title", "10위 진입");
+        TEXT.put("name.title", "상위 10위 진입!");
         TEXT.put("name.prompt", "이름을 입력하세요 (한글/영문/숫자, 최대 10자)");
         TEXT.put("name.invalid", "이름은 공백을 뺀 1~10자로 입력하세요");
 

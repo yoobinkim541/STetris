@@ -413,7 +413,11 @@ public final class LobbyChrome {
 
     private static void paintGuide(Graphics2D g, String guide, Rectangle bar) {
         UiKit.paintCapsule(g, bar.x, bar.y, bar.width, bar.height);
-        g.setFont(GameTheme.text(Math.max(13, bar.height / 2), false));
+        // 작은 창에서는 안내가 캡슐 끝 장식을 넘어가 잘렸다. 글자 칸에 들어갈 때까지 줄인다
+        int room = UiKit.contentBox(UiKit.AssetSlot.CAPSULE, bar).width;
+        int size = Math.max(13, bar.height / 2);
+        g.setFont(GameTheme.text(size, false));
+        while (size > 10 && g.getFontMetrics().stringWidth(guide) > room) g.setFont(GameTheme.text(--size, false));
         g.setColor(new Color(0xE8E8E8));
         UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, bar, guide, UiKit.Align.CENTER);
     }

@@ -176,7 +176,7 @@ public final class Patterns {
         public void apply(PatternContext context) {
             int player = Math.max(0, context.target());
             context.addEffect(player, PatternId.OVERLOAD, duration(context, 5), new int[0]);
-            context.setGravity(player, 2.0);
+            context.setGravity(player, 0.5); // 낙하 간격 배율. 0.5면 속도 2배
         }
     }
 

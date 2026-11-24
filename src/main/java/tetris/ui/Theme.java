@@ -60,19 +60,6 @@ final class Theme {
         GameTheme.drawRight(g, text, rightX, baselineY);
     }
 
-    /** 세로 메뉴. 선택 항목은 강조색과 화살로 그린다. 반환: 마지막 항목 아래 y */
-    static int drawMenu(Graphics2D g, List<String> items, int selected, int centerX, int topY, int fontSize) {
-        return drawMenu(g, items, selected, centerX, topY, fontSize, false);
-    }
-
-    static int drawMenu(Graphics2D g, List<String> items, int selected, int centerX, int topY, int fontSize,
-                        boolean colorBlind) {
-        int widest = 0;
-        g.setFont(text(fontSize, true));
-        for (String item : items) widest = Math.max(widest, g.getFontMetrics().stringWidth(item));
-        return drawPills(g, items, selected, centerX, topY, fontSize, widest + fontSize * 3, colorBlind);
-    }
-
     /** 가로 알약 메뉴. 선택된 항목은 빛과 화살. 반환: 마지막 항목 아래 y */
     static int drawPills(Graphics2D g, List<String> items, int selected, int centerX, int topY, int fontSize,
                          int buttonWidth, boolean colorBlind) {
@@ -97,6 +84,8 @@ final class Theme {
             while (size > 11 && GameTheme.width(g, items.get(i)) > limit) {
                 g.setFont(GameTheme.display(--size));
             }
+            // 메뉴형 버튼 글자는 항상 흰색. 앞에서 그린 강조색이 남아 있으면 버튼과 같은 색으로 묻힌다
+            g.setColor(Color.WHITE);
             UiKit.drawInAsset(g, UiKit.AssetSlot.BUTTON, new java.awt.Rectangle(x, dy, dw, dh),
                     items.get(i), UiKit.Align.CENTER, isSelected);
             y += buttonHeight + gap;
