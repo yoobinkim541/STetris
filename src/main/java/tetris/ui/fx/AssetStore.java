@@ -206,6 +206,24 @@ public final class AssetStore {
         return tinted;
     }
 
+    /**
+     * 보스 추첨 룰렛용 작은 Lv.1 얼굴. 다섯 보스를 함께 그리므로 {@link #retainBoss}가 버리지 않는다.
+     * size는 장치 픽셀이다.
+     */
+    public synchronized BufferedImage portrait(BossId id, int size) {
+        if (id == null || size <= 0) return null;
+        String path = "/assets/boss/" + id.assetKey() + "_lv1.png";
+        String key = path + PORTRAIT + size;
+        BufferedImage cached = scaled.get(key);
+        if (cached != null) return cached;
+        BufferedImage source = image(path);
+        if (source == null) return null;
+        BufferedImage out = scale(source, 0, 0, size, size, size, size);
+        remember(key, out);
+        releaseOriginal(path);
+        return out;
+    }
+
     /** 레이드 턱 그림. 원본보다 키우지 않고, 단계가 높으면 색조만 민다 */
     public synchronized BufferedImage ledge(BossId id, int level, int maxWidth) {
         if (id == null || maxWidth <= 0) return null;
@@ -281,8 +299,10 @@ public final class AssetStore {
 
     private static boolean otherBoss(String key, String assetKey) {
         boolean bossArt = key.contains("/assets/boss/") || key.contains("/assets/raid/ledge-");
-        return bossArt && !key.contains(assetKey);
+        return bossArt && !key.contains(PORTRAIT) && !key.contains(assetKey);
     }
+
+    private static final String PORTRAIT = "@portrait:";
 
     private static long bytes(BufferedImage image) {
         if (image == null) return 0;

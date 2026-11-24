@@ -80,7 +80,7 @@ public final class ClientRaidClient implements RaidClient {
                 accept(new RaidSnapshot(matchId, Math.max(lastRevision, current.revision()) + 1, current.mode(),
                         RaidPhase.FINISHED, current.boss(), current.players(), current.kills(), current.elapsedMillis(),
                         current.gauge(), null, List.of(), result, current.raceBosses(), current.raceKills(),
-                        current.raceGauges()));
+                        current.raceGauges(), 0));
             }
             default -> {
             }
@@ -130,7 +130,7 @@ public final class ClientRaidClient implements RaidClient {
         int[] kills = race ? new int[] {0, 0} : new int[0];
         int[] gauges = race ? new int[] {0, 0} : new int[0];
         return new RaidSnapshot(matchId, 0, config.raidMode(), RaidPhase.COUNTDOWN, boss,
-                List.of(emptyPlayer(), emptyPlayer()), 0, 0, 0, null, List.of(), null, bosses, kills, gauges);
+                List.of(emptyPlayer(), emptyPlayer()), 0, 0, 0, null, List.of(), null, bosses, kills, gauges, 0);
     }
 
     private static RaidSnapshot.PlayerView emptyPlayer() {

@@ -48,7 +48,7 @@ class RaceEngineTest {
         harness.clearTwo(0);
 
         RaidSnapshot after = harness.engine.snapshot();
-        assertEquals(RaidPhase.PLAYING, after.phase(), "레이스는 카드를 고르지 않는다");
+        assertEquals(RaidPhase.BOSS_INTRO, after.phase(), "레이스는 카드 없이 다음 보스 소개로 간다");
         assertNull(after.offer());
         assertEquals(1, after.raceKills()[0]);
         assertEquals(0, after.raceKills()[1]);
@@ -59,6 +59,12 @@ class RaceEngineTest {
         assertNotEquals(slowerHp, after.bossFor(1).hp());
         assertEquals(2, after.players().get(1).board().pendingRows().size());
         assertEquals(0, harness.event(RaidEvent.Type.BOSS_DEFEATED).player());
+
+        harness.settle();
+        assertEquals(RaidPhase.PLAYING, harness.engine.snapshot().phase());
+        harness.clearTwo(0);
+        RaidSnapshot next = harness.engine.snapshot();
+        assertTrue(next.bossFor(0).hp() < next.bossFor(0).maxHp(), "소개가 끝나면 다음 보스에게 다시 데미지가 들어간다");
     }
 
     @Test
@@ -77,7 +83,7 @@ class RaceEngineTest {
     void timeoutUsesKillsThenHpProgressThenDraw() throws Exception {
         Harness draw = race(8);
         draw.ready();
-        draw.now = RaidRules.COUNTDOWN_MILLIS + RaidRules.RACE_LIMIT_MILLIS;
+        draw.now += RaidRules.RACE_LIMIT_MILLIS;
         draw.engine.advance(draw.now);
         assertEquals(RaidPhase.FINISHED, draw.engine.snapshot().phase());
         assertNull(draw.engine.snapshot().result().winner());
@@ -85,7 +91,7 @@ class RaceEngineTest {
         Harness progress = race(9);
         progress.ready();
         progress.clearTwo(0);
-        progress.now = RaidRules.COUNTDOWN_MILLIS + RaidRules.RACE_LIMIT_MILLIS;
+        progress.now += RaidRules.RACE_LIMIT_MILLIS;
         progress.engine.advance(progress.now);
         assertEquals(0, progress.engine.snapshot().result().winner());
 
@@ -94,8 +100,9 @@ class RaceEngineTest {
         setHp(kills.engine, 0, 25);
         kills.clearTwo(0);
         assertEquals(1, kills.engine.snapshot().raceKills()[0]);
+        kills.settle();
         kills.clearTwo(1);
-        kills.now = RaidRules.COUNTDOWN_MILLIS + RaidRules.RACE_LIMIT_MILLIS;
+        kills.now += RaidRules.RACE_LIMIT_MILLIS;
         kills.engine.advance(kills.now);
         assertEquals(0, kills.engine.snapshot().result().winner(), "처치 수가 남은 HP 비율보다 앞선다");
     }
@@ -131,7 +138,12 @@ class RaceEngineTest {
         }
 
         void ready() {
-            now = RaidRules.COUNTDOWN_MILLIS;
+            now = RaidRules.INTRO_MILLIS + RaidRules.COUNTDOWN_MILLIS;
+            engine.advance(now);
+        }
+
+        void settle() {
+            now += RaidRules.INTRO_MILLIS + RaidRules.COUNTDOWN_MILLIS;
             engine.advance(now);
         }
 

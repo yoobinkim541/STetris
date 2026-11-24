@@ -43,6 +43,14 @@ public final class RaidCapture {
         capture("line-clear-mid", burst(false), medium.width, medium.height);
         capture("coop-small", panel(false, aliveCoop()), small.width, small.height);
         capture("coop-1920x1080", panel(false, aliveCoop()), 1920, 1080);
+        capture("intro-spin", panel(false, intro(BossId.NIGHT_WITCH, 1, 1_200)), medium.width, medium.height);
+        capture("intro-stopped", panel(false, intro(BossId.NIGHT_WITCH, 1, 2_700)), medium.width, medium.height);
+        capture("intro-info-witch", panel(false, intro(BossId.NIGHT_WITCH, 1, 4_000)), medium.width, medium.height);
+        capture("intro-info-jelly-lv2", panel(false, intro(BossId.JELLY_KING, 2, 9_000)), medium.width, medium.height);
+        capture("intro-info-dragon-small", panel(false, intro(BossId.MECHA_DRAGON, 3, 6_000)), small.width, small.height);
+        capture("intro-info-golem-cb", panel(true, intro(BossId.STONE_GOLEM, 4, 5_000)), medium.width, medium.height);
+        capture("intro-info-golden", panel(false, intro(BossId.GOLDEN_TETRO, 2, 5_000)), medium.width, medium.height);
+        capture("intro-info-1920", panel(false, intro(BossId.MECHA_DRAGON, 1, 5_000)), 1920, 1080);
         long busy = timeBusy();
         System.out.println("raid-paint-ms " + (busy / 1_000_000.0));
         compare();
@@ -64,6 +72,16 @@ public final class RaidCapture {
                 3, 192_000L, 62, null, List.of(), null);
     }
 
+    private static RaidSnapshot intro(BossId id, int level, long elapsed) {
+        int max = tetris.feature.raid.RaidRules.hp(RaidMode.SOLO, level);
+        var boss = new RaidSnapshot.BossView(id, level, max, max,
+                id == BossId.GOLDEN_TETRO ? null : tetris.feature.raid.PatternPicker.roster(id)[0], 0,
+                tetris.feature.raid.RaidRules.countdown(level), new int[0], id == BossId.GOLDEN_TETRO ? 15_000 : -1);
+        return new RaidSnapshot("raid-preview", 12, RaidMode.SOLO, RaidPhase.BOSS_INTRO, boss,
+                List.of(RaidSamples.fighter(true)), level - 1, 60_000L, 30, null, List.of(), null,
+                List.of(), new int[0], new int[0], tetris.feature.raid.RaidRules.INTRO_MILLIS - elapsed);
+    }
+
     private static RaidSnapshot race() {
         var one = new RaidSnapshot.BossView(BossId.STONE_GOLEM, 2, 180, 400, PatternId.ROCK_THROW,
                 0, 2, new int[0], -1);
@@ -73,7 +91,7 @@ public final class RaidCapture {
         return new RaidSnapshot("raid-preview", 3, RaidMode.RACE, RaidPhase.PLAYING, one,
                 List.of(RaidSamples.fighter(true), RaidSamples.fighter(false)),
                 4, 192_000L, 40, null, stolen, null,
-                List.of(one, two), new int[] {3, 1}, new int[] {80, 35});
+                List.of(one, two), new int[] {3, 1}, new int[] {80, 35}, 0);
     }
 
     private static void capture(String name, JComponent panel, int width, int height) throws Exception {

@@ -5,6 +5,7 @@ import tetris.feature.game.GameListener;
 import tetris.feature.game.GameSnapshot;
 import tetris.feature.game.GameState;
 import tetris.feature.item.Cell;
+import tetris.feature.raid.BossRoulette;
 import tetris.feature.raid.api.RaidEvent;
 import tetris.feature.raid.api.RaidPhase;
 import tetris.feature.raid.api.RaidSnapshot;
@@ -38,6 +39,8 @@ public final class GameSounds {
     private RaidSnapshot raid;
     private long countdownAnchor = -1;
     private int countdownDigit = -1;
+    private int introSlot = -1;
+    private boolean introStopped;
 
     public GameSounds(Sink sink) {
         if (sink == null) throw new IllegalArgumentException("sink");
@@ -187,10 +190,12 @@ public final class GameSounds {
         RaidSnapshot prev = raid;
         if (prev != null && prev.raidId().equals(next.raidId()) && prev.revision() == next.revision()) return;
         raid = next;
-        if (!sameRaid(prev, next)) {
+        if (!sameRaid(prev, next) || next.phase() == RaidPhase.COUNTDOWN && prev.phase() != RaidPhase.COUNTDOWN) {
+            // 보스마다, 그리고 일시정지에서 돌아올 때마다 카운트다운은 3부터 다시 센다
             countdownAnchor = -1;
             countdownDigit = -1;
         }
+        if (next.phase() == RaidPhase.BOSS_INTRO) introSounds(prev, next);
         if (next.phase() == RaidPhase.COUNTDOWN) {
             if (countdownAnchor < 0) countdownAnchor = System.currentTimeMillis();
             int gone = (int) ((System.currentTimeMillis() - countdownAnchor) / 1000);
@@ -206,7 +211,10 @@ public final class GameSounds {
         if (prev != null && prev.boss().piecesLeft() != 1 && next.boss().piecesLeft() == 1) {
             play(SoundId.BOSS_ATTACK_WARN);
         }
-        for (RaidEvent event : next.events()) play(SoundEffects.forRaidEvent(event));
+        for (RaidEvent event : next.events()) {
+            // 등장음은 룰렛이 멈출 때 낸다
+            if (event.type() != RaidEvent.Type.BOSS_SPAWN) play(SoundEffects.forRaidEvent(event));
+        }
         if (prev == null) return;
         int n = Math.min(prev.players().size(), next.players().size());
         for (int i = 0; i < n; i++) {
@@ -214,6 +222,29 @@ public final class GameSounds {
             MatchSnapshot.PlayerView after = next.players().get(i).board();
             int cleared = fullRows(before.cells()) - fullRows(after.cells());
             if (cleared > 0 && after.score() > before.score()) playClear(Math.min(4, cleared));
+        }
+    }
+
+    /** 룰렛 칸이 바뀔 때마다 똑딱, 멈추면 등장음 */
+    private void introSounds(RaidSnapshot prev, RaidSnapshot next) {
+        boolean entering = !sameRaid(prev, next)
+                || prev.phase() != RaidPhase.BOSS_INTRO && prev.phase() != RaidPhase.PAUSED;
+        if (entering) {
+            introSlot = -1;
+            introStopped = false;
+        }
+        long intro = next.introMillis();
+        if (BossRoulette.stopped(intro)) {
+            if (!introStopped) {
+                introStopped = true;
+                play(SoundId.BOSS_SPAWN);
+            }
+            return;
+        }
+        int slot = BossRoulette.slot(intro, next.boss().id());
+        if (slot != introSlot) {
+            introSlot = slot;
+            play(SoundId.MENU_MOVE);
         }
     }
 

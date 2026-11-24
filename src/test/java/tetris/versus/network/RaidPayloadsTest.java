@@ -64,6 +64,18 @@ class RaidPayloadsTest {
         assertTrue(race.length - WireFormat.LENGTH_PREFIX_BYTES < WireFormat.MAX_FRAME_BYTES);
     }
 
+    @Test
+    void bossIntroPhaseAndRemainingTimeCrossTheWire() throws Exception {
+        var engine = new tetris.feature.raid.RaidEngine(new tetris.feature.raid.api.RaidConfig(RaidMode.COOP, 5L,
+                tetris.feature.setting.ControlStyle.CLASSIC), () -> 0L);
+        engine.advance(1_234);
+        RaidSnapshot read = RaidPayloads.readState(overWire(RaidPayloads.stateMessage(engine.snapshot())));
+        assertEquals(RaidPhase.BOSS_INTRO, read.phase());
+        assertEquals(tetris.feature.raid.RaidRules.INTRO_MILLIS - 1_234, read.introMillis());
+        assertEquals(engine.snapshot().boss().id(), read.boss().id());
+        engine.close();
+    }
+
     private static Message overWire(Message message) throws Exception {
         byte[] frame = new FrameEncoder().encode(message);
         return new FrameDecoder().feed(frame, 0, frame.length).get(0);
@@ -102,6 +114,6 @@ class RaidPayloadsTest {
                 new RaidSnapshot.Result(2, 800, 120_000, race ? 1 : null),
                 race ? List.of(boss, other) : List.of(),
                 race ? new int[] {2, 1} : new int[0],
-                race ? new int[] {40, 80} : new int[0]);
+                race ? new int[] {40, 80} : new int[0], 0);
     }
 }
