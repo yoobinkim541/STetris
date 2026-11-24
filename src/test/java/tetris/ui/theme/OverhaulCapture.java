@@ -60,6 +60,7 @@ public final class OverhaulCapture {
         capture("name-entry", nameEntry(size.width, size.height), size.width, size.height);
         capture("versus", battle(false), 960, 720);
         capture("versus-timed", battle(true), 960, 720);
+        capture("versus-paused", battle(false, MatchPhase.PAUSED), 960, 720);
         int small = ScreenSize.SMALL.cellPixels();
         int large = ScreenSize.LARGE.cellPixels();
         var smallSize = GamePanel.preferredSizeFor(small);
@@ -160,12 +161,16 @@ public final class OverhaulCapture {
     }
 
     private static BattlePanel battle(boolean timed) {
+        return battle(timed, MatchPhase.PLAYING);
+    }
+
+    private static BattlePanel battle(boolean timed, MatchPhase phase) {
         BattlePanel panel = new BattlePanel(false, new BattleKeyMap().guide(),
                 BattleModes.label(timed ? BattleMode.TIMED : BattleMode.CLASSIC),
                 timed ? BattleMode.TIMED : BattleMode.CLASSIC, null);
         MatchSnapshot sample = FakeBattleClient.sample();
         panel.setSnapshot(new MatchSnapshot(sample.matchId(), 1, sample.one(), sample.two(),
-                timed ? 192_000 : -1, MatchPhase.PLAYING, null));
+                timed ? 192_000 : -1, phase, null));
         return panel;
     }
 

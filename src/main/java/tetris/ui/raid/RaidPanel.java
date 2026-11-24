@@ -73,6 +73,10 @@ public final class RaidPanel extends JPanel {
     private BiConsumer<Integer, Boolean> cardPointer = (index, confirm) -> { };
     private String introHint = "하드 드롭으로 바로 시작";
     private Runnable onSkipIntro = () -> { };
+    private PatternId skillPattern;
+    private int skillTarget = -1;
+    private BossId skillBoss;
+    private long skillStarted = Long.MIN_VALUE;
     private long countdownAnchor = -1;
     private long lastRevision = Long.MIN_VALUE;
     private int stolenSlower = -1;
@@ -97,7 +101,9 @@ public final class RaidPanel extends JPanel {
     private int backdropH;
     private BufferedImage plate;
     private long plateStamp = Long.MIN_VALUE;
-    private boolean restPose;
+    private final java.util.Map<String, BufferedImage> liveSprites = new java.util.LinkedHashMap<>(8, 0.75f, true);
+    private BufferedImage restPlate;
+    private long restStamp = Long.MIN_VALUE;
 
     public RaidPanel(boolean colorBlind) {
         this.colorBlind = colorBlind;
@@ -130,13 +136,28 @@ public final class RaidPanel extends JPanel {
         if (changed) {
             fx.absorb(snapshot.events());
             noteStolen(snapshot.events());
+            noteSkill(snapshot);
             lastRevision = snapshot.revision();
         }
         if (snapshot != null && snapshot.boss() != null) {
             var boss = snapshot.boss();
             motion.note(boss.id(), boss.level(), boss.hp(), boss.maxHp(), changed ? snapshot.events() : List.of());
+            if (previous == RaidPhase.BOSS_INTRO && snapshot.phase() == RaidPhase.COUNTDOWN) motion.replayEntrance();
         }
         repaint();
+    }
+
+    /** 보스가 패턴을 쓴 순간: 무엇을 누구에게 썼는지 읽을 수 있게 알림을 띄운다 */
+    private void noteSkill(RaidSnapshot snapshot) {
+        for (RaidEvent event : snapshot.events()) {
+            if (event.type() != RaidEvent.Type.BOSS_ATTACK) continue;
+            int ordinal = event.value();
+            if (ordinal < 0 || ordinal >= PatternId.values().length) continue;
+            skillPattern = PatternId.values()[ordinal];
+            skillTarget = event.player();
+            skillBoss = snapshot.bossFor(Math.max(0, event.player())).id();
+            skillStarted = System.nanoTime();
+        }
     }
 
     public void setGuide(String guide) {
@@ -335,7 +356,12 @@ public final class RaidPanel extends JPanel {
             originY = (int) ((getHeight() - VH * scale) / 2);
             compose();
             ensurePlate();
-            g.drawImage(plate, 0, 0, null);
+            if (motion.idle() && fx.flashAlpha() == 0 && fx.shakeX() == 0) {
+                g.drawImage(restPlate(), 0, 0, null);
+            } else {
+                g.drawImage(plate, 0, 0, null);
+                paintLiveBoss(g);
+            }
             g.translate(originX, originY);
             g.scale(scale, scale);
             g.translate(fx.shakeX(), 0);
@@ -376,11 +402,8 @@ public final class RaidPanel extends JPanel {
     private void ensurePlate() {
         int width = getWidth();
         int height = getHeight();
-        var boss = snapshot.boss();
-        var boss2 = snapshot.mode() == RaidMode.RACE ? snapshot.bossFor(1) : null;
-        long key = (((long) width) << 32) ^ height ^ boss.id().ordinal() ^ (boss.level() << 8)
-                ^ (boss2 == null ? 0L : (((long) boss2.id().ordinal() << 24) ^ ((long) boss2.level() << 28)))
-                ^ (snapshot.mode().ordinal() << 16) ^ scene.boss.width ^ (scene.frame[0].width << 12) ^ scene.frame[0].y;
+        long key = (((long) width) << 32) ^ height ^ (snapshot.mode().ordinal() << 16) ^ scene.boss.width
+                ^ (scene.frame[0].width << 12) ^ scene.frame[0].y;
         if (plate != null && plateStamp == key && plate.getWidth() == width && plate.getHeight() == height) return;
         plate = new BufferedImage(Math.max(1, width), Math.max(1, height), BufferedImage.TYPE_INT_RGB);
         Graphics2D layer = plate.createGraphics();
@@ -392,22 +415,39 @@ public final class RaidPanel extends JPanel {
             }
             layer.translate(originX, originY);
             layer.scale(scale, scale);
-            restPose = true;
             paintChrome(layer);
-            restPose = false;
         } finally {
             layer.dispose();
         }
         plateStamp = key;
     }
 
-    private void paintChrome(Graphics2D g) {
-        if (snapshot.mode() == RaidMode.RACE) {
-            for (int i = 0; i < 2; i++) drawLedge(g, snapshot.bossFor(i), scene.raceArt[i], true);
-        } else {
-            drawLedge(g, snapshot.boss(), scene.boss, false);
-            paintHpArt(g);
+    /** 쉬는 보스까지 합친 한 장. 보스·단계가 바뀌거나 틀이 바뀌면 다시 만든다 */
+    private BufferedImage restPlate() {
+        var one = snapshot.bossFor(0);
+        var two = snapshot.mode() == RaidMode.RACE ? snapshot.bossFor(1) : null;
+        long key = plateStamp * 31 + one.id().ordinal() * 7L + one.level() * 1009L
+                + (two == null ? 0 : two.id().ordinal() * 100_003L + two.level() * 1_000_003L);
+        if (restPlate != null && restStamp == key && restPlate.getWidth() == plate.getWidth()
+                && restPlate.getHeight() == plate.getHeight()) {
+            return restPlate;
         }
+        if (restPlate == null || restPlate.getWidth() != plate.getWidth() || restPlate.getHeight() != plate.getHeight()) {
+            restPlate = new BufferedImage(plate.getWidth(), plate.getHeight(), BufferedImage.TYPE_INT_RGB);
+        }
+        Graphics2D layer = restPlate.createGraphics();
+        try {
+            layer.drawImage(plate, 0, 0, null);
+            paintLiveBoss(layer);
+        } finally {
+            layer.dispose();
+        }
+        restStamp = key;
+        return restPlate;
+    }
+
+    /** 움직이지 않는 틀(보드 테두리·이름표). 보스와 HP 틀은 연출이 보이도록 {@link #paintLiveBoss}가 매번 그린다 */
+    private void paintChrome(Graphics2D g) {
         for (int i = 0; i < scene.players; i++) {
             Rectangle frame = scene.frame[i];
             if (frame.width <= 0) continue;
@@ -416,12 +456,118 @@ public final class RaidPanel extends JPanel {
         }
     }
 
-    private void paintHpArt(Graphics2D g) {
+    /**
+     * 보스 그림과 HP 틀을 창 좌표에서 1:1로 그린다. 장치 크기로 한 번 축소해 둔 그림을 찍으므로
+     * 매 프레임 늘리는 비용이 없고, 맞을 때 움찔·등장·공격 내리찍기·처치 페이드가 실제로 보인다.
+     */
+    private void paintLiveBoss(Graphics2D g) {
+        if (snapshot.mode() == RaidMode.RACE) {
+            for (int i = 0; i < 2; i++) paintLiveLedge(g, snapshot.bossFor(i), scene.raceArt[i], true);
+            return;
+        }
+        paintLiveLedge(g, snapshot.boss(), scene.boss, false);
         Rectangle box = scene.hp;
         if (box.width <= 0) return;
         BufferedImage image = assets.hpFrame(box.width);
-        if (image != null) g.drawImage(image, box.x, box.y, null);
-        else UiKit.paintFrame(g, UiKit.Tone.VIOLET, box.x, box.y, box.width, box.height);
+        if (image == null) {
+            Graphics2D layer = virtualLayer(g);
+            try {
+                UiKit.paintFrame(layer, UiKit.Tone.VIOLET, box.x, box.y, box.width, box.height);
+            } finally {
+                layer.dispose();
+            }
+            return;
+        }
+        stamp(g, image, box.x, box.y, image.getWidth(), image.getHeight(), 1f);
+    }
+
+    private void paintLiveLedge(Graphics2D g, RaidSnapshot.BossView boss, Rectangle window, boolean crop) {
+        if (boss == null || window.width <= 0) return;
+        BufferedImage image = crop
+                ? motion.raceCrop(assets, boss.id(), boss.level(), window.width, window.height)
+                : assets.ledge(boss.id(), boss.level(), window.width);
+        int bottom = window.y + window.height;
+        if (boss.level() >= 2) {
+            BufferedImage aura = motion.aura(boss.level(), window.width);
+            if (aura != null) {
+                stamp(g, aura, window.x + window.width / 2 - aura.getWidth() / 2, bottom - aura.getHeight() - 8,
+                        aura.getWidth(), aura.getHeight(), 1f);
+            }
+        }
+        int drawW = image == null ? window.width : image.getWidth();
+        int drawH = image == null ? window.height : image.getHeight();
+        int x = window.x + (window.width - drawW) / 2;
+        int y = bottom - drawH + motion.introOffset() - motion.recoilY() + motion.attackLunge();
+        float alpha = Math.max(0.08f, motion.defeatAlpha());
+        float grow = motion.attackScale();
+        if (grow != 1f) {
+            // 내리찍는 순간만 아래 가운데를 기준으로 살짝 키운다
+            int grownW = Math.round(drawW * grow);
+            int grownH = Math.round(drawH * grow);
+            x -= (grownW - drawW) / 2;
+            y -= grownH - drawH;
+            drawW = grownW;
+            drawH = grownH;
+        }
+        if (image == null) {
+            Graphics2D layer = virtualLayer(g);
+            try {
+                paintBossFallback(layer, boss.id(), x, y, Math.min(drawW, 180));
+            } finally {
+                layer.dispose();
+            }
+            return;
+        }
+        BufferedImage sprite = stamp(g, image, x, y, drawW, drawH, alpha);
+        if (fx.flashAlpha() > 0 && sprite != null) {
+            BufferedImage white = motion.flashed(sprite);
+            if (white != null) drawDevice(g, white, x, y, 0.82f * alpha);
+        }
+    }
+
+    /** 가상 좌표 사각형에 그림을 장치 픽셀 크기로 캐시해 1:1로 찍는다. 찍은 장치 크기 그림을 돌려준다 */
+    private BufferedImage stamp(Graphics2D g, BufferedImage image, int vx, int vy, int vw, int vh, float alpha) {
+        int dw = Math.max(1, (int) Math.round(vw * scale));
+        int dh = Math.max(1, (int) Math.round(vh * scale));
+        String key = System.identityHashCode(image) + ":" + dw + "x" + dh;
+        BufferedImage sprite = liveSprites.get(key);
+        if (sprite == null) {
+            // 미리 곱한 알파는 매 프레임 합성이 가장 싸다
+            sprite = new BufferedImage(dw, dh, BufferedImage.TYPE_INT_ARGB_PRE);
+            Graphics2D layer = sprite.createGraphics();
+            try {
+                layer.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                layer.drawImage(image, 0, 0, dw, dh, null);
+            } finally {
+                layer.dispose();
+            }
+            liveSprites.put(key, sprite);
+            // 크기가 바뀐 공격 순간 그림까지 몇 장만 둔다
+            while (liveSprites.size() > 8) {
+                var oldest = liveSprites.keySet().iterator();
+                oldest.next();
+                oldest.remove();
+            }
+        }
+        drawDevice(g, sprite, vx, vy, alpha);
+        return sprite;
+    }
+
+    private void drawDevice(Graphics2D g, BufferedImage sprite, int vx, int vy, float alpha) {
+        int dx = originX + (int) Math.round((vx + fx.shakeX()) * scale);
+        int dy = originY + (int) Math.round(vy * scale);
+        java.awt.Composite composite = g.getComposite();
+        if (alpha < 0.99f) g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, alpha)));
+        g.drawImage(sprite, dx, dy, null);
+        g.setComposite(composite);
+    }
+
+    private Graphics2D virtualLayer(Graphics2D g) {
+        Graphics2D layer = (Graphics2D) g.create();
+        layer.translate(originX, originY);
+        layer.scale(scale, scale);
+        layer.translate(fx.shakeX(), 0);
+        return layer;
     }
 
     private void paintNameArt(Graphics2D g, int index) {
@@ -486,6 +632,11 @@ public final class RaidPanel extends JPanel {
         retryButton.setBounds(0, 0, 0, 0);
         for (Rectangle card : scene.cards) card.setBounds(0, 0, 0, 0);
         compose();
+        if (snapshot.mode() != RaidMode.RACE) {
+            // 등장 먼지와 처치 파편. 예전에는 그리는 곳이 없어 보이지 않았다
+            motion.paintDust(g, scene.boss.x + scene.boss.width / 2, scene.boss.y + scene.boss.height - 8);
+            motion.paintShards(g, scene.boss);
+        }
         if (snapshot.mode() == RaidMode.RACE) paintRace(g);
         else paintShared(g);
         paintGuide(g);
@@ -503,9 +654,13 @@ public final class RaidPanel extends JPanel {
         if (snapshot.phase() != RaidPhase.CARD_PICK && snapshot.phase() != RaidPhase.FINISHED && scene.banner.width > 0) {
             fx.paintBanner(g, VW / 2, scene.banner.y + scene.banner.height / 2);
         }
+        if (snapshot.phase() == RaidPhase.PLAYING || snapshot.phase() == RaidPhase.PAUSED) {
+            paintStrike(g);
+            paintSkillCallout(g);
+        }
         paintStolen(g);
         if (snapshot.phase() == RaidPhase.COUNTDOWN) paintVeil(g, String.valueOf(countdownDigit()), "곧 시작합니다");
-        if (snapshot.phase() == RaidPhase.PAUSED && !confirming) paintVeil(g, "일시정지", "일시정지 키로 다시 시작합니다");
+        if (snapshot.phase() == RaidPhase.PAUSED && !confirming) paintPause(g);
         if (snapshot.phase() == RaidPhase.CARD_PICK && snapshot.offer() != null) paintCards(g);
         if (snapshot.phase() == RaidPhase.BOSS_INTRO) paintIntro(g);
         if (confirming) paintConfirm(g);
@@ -1037,51 +1192,6 @@ public final class RaidPanel extends JPanel {
         UiKit.drawCentered(g, text, cx, cy + 6);
     }
 
-    private void paintWideBoss(Graphics2D g, RaidSnapshot.BossView boss) {
-        Rectangle window = scene.boss;
-        Graphics2D layer = (Graphics2D) g.create();
-        try {
-            layer.clipRect(Math.max(0, window.x), Math.max(0, window.y), window.width, window.height);
-            drawLedge(layer, boss, window, false);
-            motion.paintDust(layer, window.x + window.width / 2, window.y + window.height - 8);
-            motion.paintShards(layer, window);
-        } finally {
-            layer.dispose();
-        }
-    }
-
-    private void drawLedge(Graphics2D g, RaidSnapshot.BossView boss, Rectangle window, boolean crop) {
-        BufferedImage image = crop
-                ? motion.raceCrop(assets, boss.id(), boss.level(), window.width, window.height)
-                : assets.ledge(boss.id(), boss.level(), window.width);
-        int bottom = window.y + window.height;
-        int drawW = image == null ? window.width : image.getWidth();
-        int drawH = image == null ? window.height : image.getHeight();
-        int x = window.x + (window.width - drawW) / 2;
-        int y = bottom - drawH + (restPose ? 0 : motion.introOffset() - motion.recoilY());
-        if (boss.level() >= 2) {
-            BufferedImage aura = motion.aura(boss.level(), window.width);
-            if (aura != null) g.drawImage(aura, window.x + window.width / 2 - aura.getWidth() / 2, bottom - aura.getHeight() - 8, null);
-        }
-        Graphics2D layer = (Graphics2D) g.create();
-        try {
-            float breath = restPose ? 1f : motion.breath();
-            layer.translate(window.x + window.width / 2.0, bottom);
-            layer.scale(breath, breath);
-            layer.translate(-(window.x + window.width / 2.0), -bottom);
-            float alpha = restPose ? 1f : motion.defeatAlpha();
-            if (alpha < 0.99f) layer.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0.08f, alpha)));
-            if (image == null) paintBossFallback(layer, boss.id(), x, y, Math.min(drawW, 180));
-            else layer.drawImage(image, x, y, null);
-            if (fx.flashAlpha() > 0 && image != null) {
-                BufferedImage white = motion.flashed(image);
-                layer.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.82f));
-                if (white != null) layer.drawImage(white, x, y, null);
-            }
-        } finally {
-            layer.dispose();
-        }
-    }
 
     private void paintHpFill(Graphics2D g, RaidSnapshot.BossView boss) {
         Rectangle box = scene.hp;
@@ -1196,10 +1306,32 @@ public final class RaidPanel extends JPanel {
         g.setFont(GameTheme.display(14));
         UiKit.drawInBox(g, "!", new Rectangle(box.x + 8, box.y, 20, box.height), UiKit.Align.CENTER);
 
-        g.setFont(GameTheme.display(16));
+        // 이름 옆에 짧은 효과를 같이 둔다. 발동까지 남은 조각 동안 계속 보여서 읽을 시간이 충분하다
+        Rectangle room = new Rectangle(box.x + 34, box.y, Math.max(40, pod.x - box.x - 40), box.height);
+        String effect = pattern == null ? (flee ? "도망치기 전에 잡기" : "") : pattern.shortEffect();
+        String gap = effect.isEmpty() ? "" : "  ·  ";
+        int size = 16;
+        java.awt.FontMetrics nameMetrics;
+        java.awt.FontMetrics effectMetrics;
+        while (true) {
+            nameMetrics = g.getFontMetrics(GameTheme.display(size));
+            effectMetrics = g.getFontMetrics(GameTheme.text(Math.max(10, size - 3), false));
+            int total = nameMetrics.stringWidth(name) + effectMetrics.stringWidth(gap + effect);
+            if (total <= room.width || size <= 11) break;
+            size--;
+        }
+        int nameW = nameMetrics.stringWidth(name);
+        int total = nameW + effectMetrics.stringWidth(gap + effect);
+        int startX = room.x + Math.max(0, (room.width - total) / 2);
+        g.setFont(GameTheme.display(size));
         g.setColor(TEXT);
-        UiKit.drawInBox(g, name, new Rectangle(box.x + 34, box.y, Math.max(40, pod.x - box.x - 40), box.height),
-                UiKit.Align.CENTER);
+        UiKit.drawInBox(g, name, new Rectangle(startX, room.y, nameW + 4, room.height), UiKit.Align.LEFT);
+        if (!effect.isEmpty()) {
+            g.setFont(GameTheme.text(Math.max(10, size - 3), false));
+            g.setColor(warnColor);
+            UiKit.drawInBox(g, gap + effect, new Rectangle(startX + nameW, room.y, total - nameW + 4, room.height),
+                    UiKit.Align.LEFT);
+        }
     }
 
     private void paintTopCapsules(Graphics2D g, RaidSnapshot.BossView boss) {
@@ -1226,6 +1358,119 @@ public final class RaidPanel extends JPanel {
         UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, box, right, UiKit.Align.RIGHT);
         long remain = Math.max(0, tetris.feature.raid.RaidRules.RACE_LIMIT_MILLIS - snapshot.elapsedMillis());
         paintCapsuleText(g, scene.timer, clock(remain), true);
+    }
+
+    /** 알림은 보스 내리찍기(약 0.45초)의 절반쯤 지나 뜬다 */
+    static final long SKILL_DELAY_MILLIS = 300;
+
+    /** 알림이 떠 있는 시간. 설명 글자 수에 맞춰 3~5.2초 (한글 초당 약 10자를 여유 있게 읽는 속도) */
+    static long skillMillis(PatternId pattern) {
+        return Math.max(3_000, Math.min(5_200, 2_200 + 70L * pattern.description().length()));
+    }
+
+    private Color warnColor() {
+        return colorBlind ? A11yColors.ORANGE : new Color(0xFF4A9E);
+    }
+
+    /** 보스가 내리찍는 순간 보스에서 대상 보드로 뻗는 빛과 보드 테두리 번쩍임 */
+    private void paintStrike(Graphics2D g) {
+        float t = motion.attackProgress();
+        if (skillPattern == null || t < 0.3f || t > 0.8f) return;
+        float alpha = (float) Math.sin(Math.PI * (t - 0.3f) / 0.5f) * 0.6f;
+        Color warn = warnColor();
+        boolean race = snapshot.mode() == RaidMode.RACE;
+        java.awt.Paint paint = g.getPaint();
+        java.awt.Stroke stroke = g.getStroke();
+        try {
+            for (int i = 0; i < scene.players; i++) {
+                if (skillTarget >= 0 && skillTarget != i) continue;
+                Rectangle play = scene.play[i];
+                if (play.width <= 0) continue;
+                Rectangle source = race ? scene.raceArt[i] : scene.boss;
+                int sx = source.x + source.width / 2;
+                int sy = source.y + source.height * 3 / 4;
+                int tx = play.x + play.width / 2;
+                int ty = play.y;
+                int near = 5;
+                int far = Math.max(10, play.width / 3);
+                java.awt.Polygon beam = new java.awt.Polygon(new int[] {sx - near, sx + near, tx + far, tx - far},
+                        new int[] {sy, sy, ty, ty}, 4);
+                g.setPaint(new java.awt.GradientPaint(sx, sy, withAlpha(warn, alpha), tx, ty, withAlpha(warn, alpha * 0.25f)));
+                g.fill(beam);
+                g.setPaint(withAlpha(warn, Math.min(1f, alpha * 1.4f)));
+                g.setStroke(new BasicStroke(3f));
+                g.drawRect(play.x - 2, play.y - 2, play.width + 3, play.height + 3);
+            }
+        } finally {
+            g.setPaint(paint);
+            g.setStroke(stroke);
+        }
+    }
+
+    /** 무슨 패턴을 누구에게 썼는지, 효과가 무엇인지 읽을 시간 동안 보스 위에 띄운다 */
+    private void paintSkillCallout(Graphics2D g) {
+        if (skillPattern == null || skillStarted == Long.MIN_VALUE) return;
+        // 보스가 내리찍는 모습이 먼저 보이고, 알림은 그 뒤에 떠서 무엇을 했는지 읽게 한다
+        long age = (System.nanoTime() - skillStarted) / 1_000_000L - SKILL_DELAY_MILLIS;
+        long life = skillMillis(skillPattern);
+        if (age < 0 || age >= life) return;
+        float in = Math.min(1f, age / 160f);
+        float out = Math.min(1f, (life - age) / 420f);
+        float alpha = Math.max(0f, Math.min(in, out));
+        Rectangle box = calloutBox();
+        box.y -= Math.round((1f - in) * 12f);
+        java.awt.Composite composite = g.getComposite();
+        java.awt.Stroke stroke = g.getStroke();
+        g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
+        try {
+            Color warn = warnColor();
+            g.setColor(new Color(16, 10, 34, 224));
+            g.fillRoundRect(box.x, box.y, box.width, box.height, 14, 14);
+            g.setColor(warn);
+            g.setStroke(new BasicStroke(1.8f));
+            g.drawRoundRect(box.x, box.y, box.width - 1, box.height - 1, 14, 14);
+            int icon = Math.min(40, box.height - 24);
+            BufferedImage image = assets.scaled(AssetStore.patternPath(skillPattern), AssetStore.devicePixels(g, icon),
+                    AssetStore.devicePixels(g, icon));
+            int iconX = box.x + 10;
+            if (image != null) g.drawImage(image, iconX, box.y + (box.height - icon) / 2, icon, icon, null);
+            int tx = iconX + icon + 10;
+            int tw = box.x + box.width - 10 - tx;
+            String target = targetText(skillTarget);
+            g.setFont(GameTheme.fontFor(target, 12, true));
+            int targetW = g.getFontMetrics().stringWidth(target) + 8;
+            g.setColor(TEXT);
+            UiKit.drawInBox(g, target, new Rectangle(box.x + box.width - 10 - targetW, box.y + 6, targetW, 20), UiKit.Align.RIGHT);
+            String title = (skillBoss == null ? "" : skillBoss.displayName() + "의 ") + skillPattern.displayName() + "!";
+            int titleSize = fit(g, title, Math.max(40, tw - targetW - 6), 17, 12, false);
+            g.setFont(GameTheme.fontFor(title, titleSize, false));
+            g.setColor(warn);
+            UiKit.drawInBox(g, title, new Rectangle(tx, box.y + 6, Math.max(40, tw - targetW - 6), 22), UiKit.Align.LEFT);
+            g.setFont(GameTheme.text(12, false));
+            g.setColor(TEXT);
+            List<String> lines = tetris.ui.theme.TextWrap.lines(skillPattern.description(), g.getFontMetrics(), tw, 2);
+            for (int i = 0; i < lines.size(); i++) {
+                UiKit.drawInBox(g, lines.get(i), new Rectangle(tx, box.y + 30 + i * 17, tw, 17), UiKit.Align.LEFT);
+            }
+        } finally {
+            g.setComposite(composite);
+            g.setStroke(stroke);
+        }
+    }
+
+    /** 솔로·협동은 보스 그림 위쪽(HP 막대는 가리지 않는다), 레이스는 맞은 사람 쪽 보스 칸 */
+    private Rectangle calloutBox() {
+        if (snapshot.mode() == RaidMode.RACE) {
+            Rectangle art = scene.raceArt[Math.max(0, Math.min(1, skillTarget))];
+            return new Rectangle(art.x, art.y + 24, art.width, 88);
+        }
+        int width = Math.min(VW - 40, 440);
+        return new Rectangle((VW - width) / 2, scene.boss.y + 6, width, 64);
+    }
+
+    private static Color withAlpha(Color color, float alpha) {
+        int a = Math.max(0, Math.min(255, Math.round(alpha * 255)));
+        return new Color(color.getRed(), color.getGreen(), color.getBlue(), a);
     }
 
     private void paintStolen(Graphics2D g) {
@@ -1306,8 +1551,7 @@ public final class RaidPanel extends JPanel {
         long intro = snapshot.introMillis();
         boolean revealed = BossRoulette.revealed(intro);
         // 룰렛이 도는 동안은 위쪽 보스 그림까지 덮어 결과를 미리 보이지 않는다
-        g.setColor(new Color(4, 6, 16, revealed ? 226 : 246));
-        g.fillRect(0, 0, VW, VH);
+        fillScreen(g, new Color(4, 6, 16, revealed ? 226 : 246));
         if (revealed) paintBossInfo(g, snapshot.boss(), intro);
         else paintRoulette(g, snapshot.boss(), intro);
     }
@@ -1492,8 +1736,9 @@ public final class RaidPanel extends JPanel {
         if (!lines.isEmpty()) UiKit.drawInBox(g, lines.get(0), new Rectangle(tx, y + 28, tw, 20), UiKit.Align.LEFT);
     }
 
+    /** 카운트다운: 화면 전체를 옅게 덮고 숫자를 크게 쓴다. 보스와 보드는 비쳐 보인다 */
     private void paintVeil(Graphics2D g, String title, String hint) {
-        veilBoards(g);
+        fillScreen(g, new Color(4, 6, 16, 120));
         int y = scene.play[0].height > 0 ? scene.play[0].y + scene.play[0].height / 2 : VH / 2;
         g.setFont(GameTheme.display(36));
         g.setColor(TEXT);
@@ -1503,13 +1748,26 @@ public final class RaidPanel extends JPanel {
         UiKit.drawCentered(g, hint, VW / 2, y + 28);
     }
 
+    /** 일시정지: 클래식 화면처럼 화면 전체를 어둡게 하고 가운데 상자에 상태와 키를 쓴다 */
+    private void paintPause(Graphics2D g) {
+        fillScreen(g, new Color(4, 6, 16, 178));
+        Rectangle box = solidBox(g, 380, 168);
+        g.setFont(GameTheme.display(34));
+        g.setColor(TEXT);
+        GameTheme.drawCentered(g, "일시정지", VW / 2, box.y + 64);
+        g.setFont(GameTheme.text(15, false));
+        g.setColor(DIM);
+        UiKit.drawCentered(g, "일시정지 키로 다시 시작합니다", VW / 2, box.y + 104);
+        UiKit.drawCentered(g, "나가기 키로 레이드를 끝낼 수 있습니다", VW / 2, box.y + 130);
+    }
+
     private void paintConfirm(Graphics2D g) {
-        veilBoards(g);
+        fillScreen(g, new Color(4, 6, 16, 178));
         int boxW = 420;
         int boxH = 176;
-        int boxX = (VW - boxW) / 2;
-        int boxY = Math.max(160, scene.boardY + 24);
-        UiKit.paintFrame(g, UiKit.Tone.VIOLET, boxX, boxY, boxW, boxH);
+        Rectangle box = solidBox(g, boxW, boxH);
+        int boxX = box.x;
+        int boxY = box.y;
         g.setFont(GameTheme.display(24));
         g.setColor(TEXT);
         GameTheme.drawCentered(g, "레이드를 끝낼까요?", VW / 2, boxY + 48);
@@ -1522,10 +1780,26 @@ public final class RaidPanel extends JPanel {
         paintChoice(g, retryButton, "계속", !confirmYes);
     }
 
+    /** 가운데 불투명 상자. 뒤의 보드 글자가 상자 안으로 비치지 않게 속을 채운다 */
+    private Rectangle solidBox(Graphics2D g, int width, int height) {
+        Rectangle box = new Rectangle((VW - width) / 2, (VH - height) / 2, width, height);
+        g.setColor(new Color(8, 12, 28, 246));
+        g.fillRoundRect(box.x + 8, box.y + 8, box.width - 16, box.height - 16, 16, 16);
+        UiKit.paintFrame(g, UiKit.Tone.VIOLET, box.x, box.y, box.width, box.height);
+        return box;
+    }
+
+    /** 가상 화면 밖 여백(전체 화면의 좌우 띠)까지 포함해 창 전체를 덮는다 */
+    private void fillScreen(Graphics2D g, Color color) {
+        g.setColor(color);
+        int left = (int) Math.floor(-originX / scale) - 8;
+        int top = (int) Math.floor(-originY / scale) - 8;
+        g.fillRect(left, top, (int) Math.ceil(getWidth() / scale) + 16, (int) Math.ceil(getHeight() / scale) + 16);
+    }
+
     private void paintResult(Graphics2D g) {
         RaidSnapshot.Result result = snapshot.result();
-        g.setColor(new Color(4, 6, 16, 214));
-        g.fillRect(0, 0, VW, VH);
+        fillScreen(g, new Color(4, 6, 16, 214));
         int boxW = Math.min(480, VW - 48);
         int boxH = Math.min(320, VH - 48);
         int boxX = (VW - boxW) / 2;
@@ -1585,12 +1859,6 @@ public final class RaidPanel extends JPanel {
         g.setFont(GameTheme.display(16));
         g.setColor(Color.WHITE);
         UiKit.drawInAsset(g, UiKit.AssetSlot.BUTTON, box, label, UiKit.Align.CENTER, selected);
-    }
-
-    private void veilBoards(Graphics2D g) {
-        g.setColor(new Color(4, 6, 16, 150));
-        int top = Math.max(0, scene.boardY - 8);
-        g.fillRect(0, top, VW, VH - top);
     }
 
     private void paintGuide(Graphics2D g) {

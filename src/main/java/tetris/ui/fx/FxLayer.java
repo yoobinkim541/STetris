@@ -110,7 +110,7 @@ public final class FxLayer {
     public void paintBanner(Graphics2D g, int centerX, int centerY) {
         if (banners.isEmpty()) return;
         Banner banner = banners.get(banners.size() - 1);
-        int alpha = Math.min(255, banner.life * 10);
+        int alpha = Math.min(255, banner.life * 12);
         int rgb = colorBlind ? 0xF0E442 : banner.rgb;
         Composite previous = g.getComposite();
         g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0.2f, alpha / 255f)));
@@ -153,7 +153,7 @@ public final class FxLayer {
                 burst(0, 0xE85CFF, 8);
                 burst(1, 0x7EE7FF, 8);
             }
-            case BOSS_ATTACK -> flash = Math.max(flash, 2);
+            // 보스가 공격할 때 보스를 하얗게 번쩍이면 맞은 것처럼 보인다. 공격은 RaidPanel의 내리찍기·알림이 맡는다
             default -> {
             }
         }
@@ -171,11 +171,12 @@ public final class FxLayer {
 
     private void addNumber(int player, String text, int rgb, boolean crit, boolean onBoss) {
         if (player < 0 && !onBoss) return;
-        numbers.add(new Floater(Math.max(0, player), text, rgb, crit ? 14 : 26, crit, onBoss));
+        // 숫자는 0.7초쯤 떠 있어야 읽힌다 (예전 0.2~0.4초는 지나간 뒤에야 보였다)
+        numbers.add(new Floater(Math.max(0, player), text, rgb, crit ? 52 : 44, crit, onBoss));
     }
 
     private void banner(String text, int rgb) {
-        banners.add(new Banner(text, rgb, 46));
+        banners.add(new Banner(text, rgb, 72));
     }
 
     private void burst(int player, int rgb, int count) {

@@ -51,6 +51,14 @@ public final class RaidCapture {
         capture("intro-info-golem-cb", panel(true, intro(BossId.STONE_GOLEM, 4, 5_000)), medium.width, medium.height);
         capture("intro-info-golden", panel(false, intro(BossId.GOLDEN_TETRO, 2, 5_000)), medium.width, medium.height);
         capture("intro-info-1920", panel(false, intro(BossId.MECHA_DRAGON, 1, 5_000)), 1920, 1080);
+        capture("pause", panel(false, RaidSamples.phase(RaidMode.COOP, RaidPhase.PAUSED)), medium.width, medium.height);
+        capture("pause-1920", panel(false, RaidSamples.phase(RaidMode.SOLO, RaidPhase.PAUSED)), 1920, 1080);
+        RaidPanel confirm = panel(false, aliveCoop());
+        confirm.setConfirm(true, false);
+        capture("confirm", confirm, medium.width, medium.height);
+        capture("skill-strike", skill(RaidMode.COOP, 11, 120), medium.width, medium.height);
+        capture("skill-callout", skill(RaidMode.SOLO, 28, 900), medium.width, medium.height);
+        capture("skill-callout-race", skill(RaidMode.RACE, 28, 900), medium.width, medium.height);
         long busy = timeBusy();
         System.out.println("raid-paint-ms " + (busy / 1_000_000.0));
         compare();
@@ -61,6 +69,23 @@ public final class RaidCapture {
         panel.setSnapshot(snapshot);
         panel.setGuide("←/→ 이동 · ↑/↓ 회전 · R 필살");
         panel.setCardSelection(1);
+        return panel;
+    }
+
+    /** 보스가 바위 투척을 쓴 뒤 frames 프레임, wait 밀리초가 지난 화면 */
+    private static RaidPanel skill(RaidMode mode, int frames, long wait) throws InterruptedException {
+        var boss = new RaidSnapshot.BossView(BossId.STONE_GOLEM, 2, 300, 580, PatternId.PILLAR, 0, 7, new int[0], -1);
+        var events = List.of(new RaidEvent(RaidEvent.Type.BOSS_ATTACK, 0, PatternId.ROCK_THROW.ordinal()));
+        var players = mode == RaidMode.SOLO ? List.of(RaidSamples.fighter(true))
+                : List.of(RaidSamples.fighter(true), RaidSamples.fighter(false));
+        RaidSnapshot snapshot = mode == RaidMode.RACE
+                ? new RaidSnapshot("raid-preview", 13, mode, RaidPhase.PLAYING, boss, players, 1, 60_000L, 0, null,
+                        events, null, List.of(boss, boss), new int[] {1, 0}, new int[] {20, 40}, 0)
+                : new RaidSnapshot("raid-preview", 13, mode, RaidPhase.PLAYING, boss, players, 1, 60_000L, 30, null,
+                        events, null);
+        RaidPanel panel = panel(false, snapshot);
+        panel.advance(frames);
+        Thread.sleep(wait);
         return panel;
     }
 
