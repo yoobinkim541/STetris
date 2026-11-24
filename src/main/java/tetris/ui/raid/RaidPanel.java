@@ -984,12 +984,20 @@ public final class RaidPanel extends JPanel {
                     }
                 }
             }
-            if (any) {
+            // 줄을 지우거나 쓰레기 줄이 들어오면 기존 회색 칸도 자리를 옮겨 "새 자리"로 잡힌다.
+            // 회색 칸 수가 실제로 늘었을 때만(쓰레기 줄·덩어리·기둥이 들어왔을 때만) 반짝인다
+            if (any && grayCount(is) > grayCount(was)) {
                 impact[i] = fresh;
                 impactSince[i] = now;
             }
             if (hasCloud(after.players().get(i)) && !hasCloud(before.players().get(i))) cloudSince[i] = now;
         }
+    }
+
+    private static int grayCount(int[][] cells) {
+        int count = 0;
+        for (int[] row : cells) for (int value : row) if (value == VersusRules.ATTACK_CELL) count++;
+        return count;
     }
 
     private static boolean hasCloud(RaidSnapshot.PlayerView player) {
