@@ -22,7 +22,7 @@ import tetris.ui.raid.RaidPanel;
 import tetris.ui.raid.RaidSamples;
 import tetris.ui.raid.RaidScreenController;
 
-/** 카드는 선택권자 키만, 필살은 R / Enter가 각자 플레이어로 간다 */
+/** 협동 카드는 두 사람이 각자 자기 키로 고르고, 필살은 R / Enter가 각자 플레이어로 간다 */
 @Timeout(30)
 class RaidInputRoutingTest {
     @Test
@@ -34,14 +34,15 @@ class RaidInputRoutingTest {
             List<String> left = new ArrayList<>();
             try (var controller = new RaidScreenController(root, coop, panel, new KeyMap(), false, ControlStyle.MODERN,
                     () -> left.add("menu"), () -> left.add("retry"))) {
-                assertEquals(1, controller.cardSelection());
+                assertEquals(1, controller.cardSelection(PlayerId.ONE));
                 key(root, KeyEvent.VK_D);
                 key(root, KeyEvent.VK_F);
-                assertTrue(coop.picks().isEmpty(), "P1 키는 P2 차례에 카드를 고르지 않는다");
-                assertEquals(1, controller.cardSelection());
-                key(root, KeyEvent.VK_RIGHT);
+                assertEquals(List.of(new FakeRaidClient.Pick(PlayerId.ONE, 2)), coop.picks(), "P1은 자기 키로 자기 카드를 고른다");
+                assertEquals(1, controller.cardSelection(PlayerId.TWO), "P1 키는 P2 커서를 움직이지 않는다");
+                key(root, KeyEvent.VK_LEFT);
                 key(root, KeyEvent.VK_SPACE);
-                assertEquals(List.of(new FakeRaidClient.Pick(PlayerId.TWO, 2)), coop.picks());
+                assertEquals(List.of(new FakeRaidClient.Pick(PlayerId.ONE, 2), new FakeRaidClient.Pick(PlayerId.TWO, 0)),
+                        coop.picks());
             }
 
             FakeRaidClient playing = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.PLAYING));
@@ -63,6 +64,53 @@ class RaidInputRoutingTest {
                 assertEquals(List.of(PlayerId.ONE), solo.ultimates(), "솔로 Enter는 P2 필살이 아니다");
             }
         });
+    }
+
+    /** 한 화면 협동: 클릭은 P1, Enter는 P2 몫이라 한 사람이 같은 입력을 두 번 눌러 두 사람 몫을 채우지 못한다 */
+    @Test
+    void oneInputCannotActForBothPlayers() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane root = new JRootPane();
+            FakeRaidClient intro = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.BOSS_INTRO));
+            RaidPanel panel = new RaidPanel(false);
+            try (var ignored = new RaidScreenController(root, intro, panel, new KeyMap(), false, ControlStyle.MODERN,
+                    () -> { }, () -> { })) {
+                Runnable click = (Runnable) field(panel, "onSkipIntro");
+                click.run();
+                click.run();
+                key(root, KeyEvent.VK_ENTER);
+                key(root, KeyEvent.VK_ENTER);
+                List<PlayerId> pressedBy = intro.sent().stream()
+                        .filter(c -> c.action() == tetris.feature.setting.GameAction.HARD_DROP && c.pressed())
+                        .map(c -> c.playerId()).toList();
+                assertEquals(List.of(PlayerId.ONE, PlayerId.ONE, PlayerId.TWO, PlayerId.TWO), pressedBy,
+                        "클릭은 두 번 눌러도 P1, Enter는 두 번 눌러도 P2");
+            }
+
+            FakeRaidClient cards = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.CARD_PICK));
+            RaidPanel cardPanel = new RaidPanel(false);
+            try (var ignored = new RaidScreenController(root, cards, cardPanel, new KeyMap(), false, ControlStyle.MODERN,
+                    () -> { }, () -> { })) {
+                @SuppressWarnings("unchecked")
+                var pointer = (java.util.function.BiConsumer<Integer, Boolean>) field(cardPanel, "cardPointer");
+                pointer.accept(2, false);
+                pointer.accept(2, true);
+                pointer.accept(0, false);
+                pointer.accept(0, true);
+                assertTrue(!cards.picks().isEmpty() && cards.picks().stream().allMatch(p -> p.player() == PlayerId.ONE),
+                        "마우스는 P1 몫만 고른다: " + cards.picks());
+            }
+        });
+    }
+
+    private static Object field(Object owner, String name) {
+        try {
+            var found = owner.getClass().getDeclaredField(name);
+            found.setAccessible(true);
+            return found.get(owner);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
     }
 
     private static void key(JRootPane root, int code) {

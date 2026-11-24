@@ -336,6 +336,7 @@ public class SettingPanel extends JPanel {
         int titleSize = Math.max(16, unit * 2);
         int titleBaseline = pad * 6 + titleSize;
         paintHeading(g2, title, titleSize, w / 2, titleBaseline);
+        paintBackButton(g2, pad, unit);
 
         List<String[]> rows = inControlKeys ? keyRows() : settingRows();
         int rowH = Math.max(38, Math.min(44, (unit * 2 / 8) * 8));
@@ -400,6 +401,17 @@ public class SettingPanel extends JPanel {
         Theme.drawGuide(g2, guide, w, h);
     }
 
+    /** 왼쪽 위 뒤로 버튼. Esc와 같다(하위 화면이면 목록으로, 목록이면 메인 메뉴로). 마우스만으로도 나갈 수 있게 한다 */
+    private void paintBackButton(Graphics2D g2, int pad, int unit) {
+        java.awt.Rectangle box = new java.awt.Rectangle(pad * 2, pad * 2, Math.max(88, unit * 6), Math.max(30, unit * 2));
+        tetris.ui.theme.UiKit.paintButton(g2, false, box.x, box.y, box.width, box.height,
+                settings.isColorBlindMode(), tetris.ui.theme.UiKit.pulse());
+        g2.setFont(Theme.font("◀ 뒤로", Math.max(13, Math.min(15, unit)), false));
+        g2.setColor(Color.WHITE);
+        tetris.ui.theme.UiKit.drawInBox(g2, "◀ 뒤로", box, tetris.ui.theme.UiKit.Align.CENTER);
+        hits.add("back", box);
+    }
+
     private static void paintHeading(Graphics2D g, String text, int size, int centerX, int baseline) {
         java.awt.Font font = tetris.ui.theme.GameTheme.display(size);
         g.setFont(font);
@@ -423,7 +435,15 @@ public class SettingPanel extends JPanel {
     }
 
     private void clickHit(String id) {
-        if (capturing != null || confirmDialog != null || id == null) return;
+        if (capturing != null) {
+            cancelKeyCapture(); // "새 키를 누르세요" 대기 중 클릭은 Esc처럼 취소한다
+            return;
+        }
+        if (confirmDialog != null || id == null) return;
+        if ("back".equals(id)) {
+            back();
+            return;
+        }
         int index = hitIndex(id);
         if (index < 0) return;
         selected = index;

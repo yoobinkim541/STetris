@@ -1,5 +1,6 @@
 package tetris.raid;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -308,17 +309,51 @@ class RaidEngineTest {
     }
 
     @Test
-    void hardDropSkipsTheIntroOnlyAfterTheRouletteStops() {
+    void hardDropSkipsTheIntroOnlyAfterTheRouletteStopsAndBothAreReady() {
         Harness harness = Harness.coop(41);
         harness.drop(1);
         assertEquals(RaidPhase.BOSS_INTRO, harness.engine.snapshot().phase(), "룰렛이 도는 동안에는 건너뛰지 않는다");
+        assertFalse(harness.engine.snapshot().introReadyFor(1), "룰렛 중 누른 것은 준비로 치지 않는다");
         harness.now = RaidRules.INTRO_SPIN_MILLIS;
         harness.engine.advance(harness.now);
         harness.drop(1);
+        assertEquals(RaidPhase.BOSS_INTRO, harness.engine.snapshot().phase(), "한 사람만 눌러서는 상대가 읽는 소개가 끊기지 않는다");
+        assertTrue(harness.engine.snapshot().introReadyFor(1));
+        assertFalse(harness.engine.snapshot().introReadyFor(0));
+        harness.drop(0);
         assertEquals(RaidPhase.COUNTDOWN, harness.engine.snapshot().phase());
         harness.now += RaidRules.COUNTDOWN_MILLIS;
         harness.engine.advance(harness.now);
         assertEquals(RaidPhase.PLAYING, harness.engine.snapshot().phase());
+    }
+
+    @Test
+    void coopCardsWaitUntilBothPlayersPickTheirOwn() throws Exception {
+        Harness harness = Harness.coop(12, (boss, level, previous, before, random) -> PatternId.SEAL_PREVIEW);
+        harness.ready();
+        for (int guard = 0; guard < 60 && harness.engine.snapshot().phase() == RaidPhase.PLAYING; guard++) harness.clearTwo(0);
+        assertEquals(RaidPhase.CARD_PICK, harness.engine.snapshot().phase());
+        RaidSnapshot.CardOffer offer = harness.engine.snapshot().offer();
+        assertArrayEquals(new int[] {-1, -1}, offer.picks());
+        assertFalse(offer.timed(), "협동은 제한 시간으로 넘어가지 않는다");
+
+        harness.now += 60_000;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.CARD_PICK, harness.engine.snapshot().phase(), "아무도 안 고르면 계속 기다린다");
+
+        harness.engine.pickCard(PlayerId.ONE, 0);
+        assertEquals(RaidPhase.CARD_PICK, harness.engine.snapshot().phase(), "한 사람만 골라서는 넘어가지 않는다");
+        assertArrayEquals(new int[] {0, -1}, harness.engine.snapshot().offer().picks());
+        harness.engine.pickCard(PlayerId.ONE, 2);
+        assertArrayEquals(new int[] {0, -1}, harness.engine.snapshot().offer().picks(), "한 사람이 두 번 고를 수 없다");
+
+        harness.engine.pickCard(PlayerId.TWO, 2);
+        RaidSnapshot after = harness.engine.snapshot();
+        if (after.phase() == RaidPhase.CARD_PICK) {
+            assertArrayEquals(new int[] {-1, -1}, after.offer().picks(), "황금 보상의 두 번째 제시는 다시 둘 다 고른다");
+        } else {
+            assertEquals(RaidPhase.BOSS_INTRO, after.phase());
+        }
     }
 
     @Test

@@ -23,7 +23,8 @@ public final class RaidSamples {
 
     public static RaidSnapshot phase(RaidMode mode, RaidPhase phase) {
         RaidSnapshot.CardOffer offer = phase == RaidPhase.CARD_PICK
-                ? new RaidSnapshot.CardOffer(List.of(CardId.SHARP_BLOCKS, CardId.SHIELD, CardId.LUCK), mode == RaidMode.SOLO ? 0 : 1, 4200)
+                ? new RaidSnapshot.CardOffer(List.of(CardId.SHARP_BLOCKS, CardId.SHIELD, CardId.LUCK),
+                        mode == RaidMode.SOLO ? new int[] {-1} : new int[] {-1, -1}, mode == RaidMode.SOLO ? 4200 : -1)
                 : null;
         RaidSnapshot.Result result = phase == RaidPhase.FINISHED
                 ? new RaidSnapshot.Result(4, 1580, 192_000L) : null;
