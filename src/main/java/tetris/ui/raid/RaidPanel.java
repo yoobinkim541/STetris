@@ -97,7 +97,7 @@ public final class RaidPanel extends JPanel {
 
     public RaidPanel(boolean colorBlind) {
         this.colorBlind = colorBlind;
-        boards = new BoardRenderer(colorBlind, true); // 블록·착지 표시는 클래식 게임 화면과 같게
+        boards = new BoardRenderer(colorBlind); // 블록·착지 표시는 모든 게임 화면이 같은 BlockCells를 쓴다
         fx.setColorBlind(colorBlind);
         setOpaque(true);
         setBackground(new Color(0x07091A));

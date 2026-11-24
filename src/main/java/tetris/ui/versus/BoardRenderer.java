@@ -1,22 +1,20 @@
 package tetris.ui.versus;
 import java.awt.Color;
-import java.awt.Color;
-import java.awt.Font;
 import java.awt.Graphics2D;
 import tetris.component.block.BlockType;
 import tetris.ui.BlockPalette;
+import tetris.ui.theme.BlockCells;
 import tetris.feature.versus.api.VersusRules;
 
-/** Shared local/P2P board drawing. Attack is a display value, never a generated BlockType. */
+/**
+ * 대전·레이드 공용 보드 그리기. 블록과 착지 지점은 클래식 화면과 같은 {@link BlockCells}를 쓴다.
+ * 공격 줄은 표시 값이고 블록 종류가 아니다.
+ */
 public final class BoardRenderer {
     private final BlockPalette palette = new BlockPalette();
     private final boolean colorBlind;
-    /** true면 블록 글자를 클래식 게임 화면과 같은 모양으로 그린다 (레이드). 대전은 false */
-    private final boolean classicCells;
-    public BoardRenderer(boolean colorBlind) { this(colorBlind, false); }
-    public BoardRenderer(boolean colorBlind, boolean classicCells) {
+    public BoardRenderer(boolean colorBlind) {
         this.colorBlind = colorBlind;
-        this.classicCells = classicCells;
     }
     public void paint(Graphics2D g, int[][] cells, int x, int y, int size) {
         Graphics2D board=(Graphics2D) g.create();
@@ -50,38 +48,19 @@ public final class BoardRenderer {
         }
     }
     /**
-     * 클래식 게임 화면과 같은 착지 표시: 점선 착지 지점과 떨어지는 조각 아래 빛기둥 (레이드).
-     * cells에는 떨어지는 조각이 합쳐져 있다. 착지 지점 위로 곧장 떨어지는 길은 비어 있으므로,
-     * 착지 지점 칸에서 위로 올라가 처음 만나는 칸이 그 열에서 떨어지는 조각의 맨 아래 칸이다.
-     * 조각과 겹치는 착지 칸은 그리지 않는다 (클래식처럼 조각이 위에 보인다).
+     * 착지 지점: 떨어지는 조각과 같은 칸을 반투명으로 그린다 (클래식 화면과 같다).
+     * ghost 칸 값은 블록 칸 값이고, 조각과 겹치는 칸은 조각이 위에 보이도록 건너뛴다.
      */
     public void paintLanding(Graphics2D g, int[][] cells, int[][] ghost, int x, int y, int size) {
         if (cells == null || ghost == null || size <= 0) return;
-        int ghostTop = Integer.MAX_VALUE;
-        int pieceBottom = Integer.MIN_VALUE;
-        boolean[] columns = new boolean[cells.length == 0 ? 0 : cells[0].length];
         for (int r = 0; r < ghost.length && r < cells.length; r++) {
-            for (int c = 0; c < ghost[r].length && c < columns.length; c++) {
-                if (ghost[r][c] == 0) continue;
-                ghostTop = Math.min(ghostTop, r);
-                if (columns[c]) continue;
-                columns[c] = true;
-                int above = r - 1;
-                while (above >= 0 && cells[above][c] == 0 && ghost[above][c] == 0) above--;
-                if (above >= 0 && cells[above][c] != 0) pieceBottom = Math.max(pieceBottom, above);
-            }
-        }
-        if (ghostTop == Integer.MAX_VALUE) return;
-        if (!colorBlind && pieceBottom != Integer.MIN_VALUE && ghostTop > pieceBottom) {
-            for (int c = 0; c < columns.length; c++) {
-                if (!columns[c]) continue;
-                tetris.ui.theme.BlockCells.paintBeam(g, x + c * size, y + (pieceBottom + 1) * size, y + ghostTop * size, size);
-            }
-        }
-        for (int r = 0; r < ghost.length && r < cells.length; r++) {
-            for (int c = 0; c < ghost[r].length && c < columns.length; c++) {
-                if (ghost[r][c] == 0 || cells[r][c] != 0) continue;
-                tetris.ui.theme.BlockCells.paintGhost(g, x + c * size, y + r * size, size, colorBlind);
+            for (int c = 0; c < ghost[r].length && c < cells[r].length; c++) {
+                int value = ghost[r][c];
+                if (value <= 0 || value >= VersusRules.ATTACK_CELL || cells[r][c] != 0) continue;
+                BlockType type = BlockType.values()[value - 1];
+                Color fill = palette.color(type, colorBlind);
+                BlockCells.paintGhost(g, x + c * size, y + r * size, size, fill, String.valueOf(type.letter()),
+                        palette.textColor(fill), colorBlind);
             }
         }
     }
@@ -95,11 +74,8 @@ public final class BoardRenderer {
         } finally { board.dispose(); }
     }
     private void paintItem(Graphics2D g, char symbol, int x, int y, int size) {
-        tetris.ui.theme.GemTiles.paint(g, x, y, size, Color.WHITE);
-        if (size < 9) return;
-        g.setFont(tetris.ui.theme.GameTheme.digits(Math.max(8, size * 2 / 3)));
-        String text = String.valueOf(symbol);
-        tetris.ui.theme.UiKit.drawInBox(g, text, new java.awt.Rectangle(x, y, size, size), tetris.ui.theme.UiKit.Align.CENTER);
+        // 아이템 칸은 클래식 화면과 같이 흰 칸에 검은 글자 (RND-8)
+        BlockCells.paintBlock(g, x, y, size, Color.WHITE, String.valueOf(symbol), Color.BLACK);
     }
     public void paintFitted(Graphics2D g, int[][] shape, int x, int y, int width, int height) {
         if (shape == null || width <= 1 || height <= 1) return;
@@ -123,41 +99,27 @@ public final class BoardRenderer {
     }
 
     public void paintCell(Graphics2D g, int value, int x, int y, int size) {
-        paintCell(g, value, x, y, size, true);
-    }
-
-    private void paintCell(Graphics2D g, int value, int x, int y, int size, boolean glyph) {
         if (size <= 0) return;
         if (value < 0 || value > VersusRules.ATTACK_CELL) throw new IllegalArgumentException("unknown cell");
-        boolean attack = value == VersusRules.ATTACK_CELL;
-        Color fill = value == 0 ? new Color(0x262A33) : attack ? new Color(0x929AA5)
-            : palette.color(BlockType.values()[value-1],colorBlind);
         if (value == 0) {
-            g.setColor(fill);
+            g.setColor(new Color(0x262A33));
             g.fillRect(x, y, size, size);
             g.setColor(new Color(0x323744));
             g.drawRect(x, y, size - 1, size - 1);
             return;
         }
-        if (classicCells && glyph && !attack) {
-            // 클래식 게임 화면과 같은 보석 칸·글자 (BlockCells)
-            tetris.ui.theme.BlockCells.paintBlock(g, x, y, size, fill,
-                    String.valueOf(BlockType.values()[value - 1].letter()), palette.textColor(fill));
+        if (value == VersusRules.ATTACK_CELL) {
+            tetris.ui.theme.GemTiles.paint(g, x, y, size, new Color(0x929AA5));
+            g.setColor(Color.BLACK);
+            int inset = Math.max(2, size / 4);
+            g.drawLine(x + inset, y + inset, x + size - inset - 1, y + size - inset - 1);
+            g.drawLine(x + size - inset - 1, y + inset, x + inset, y + size - inset - 1);
             return;
         }
-        tetris.ui.theme.GemTiles.paint(g, x, y, size, fill);
-        if (!glyph) return;
-        if (attack) {
-            g.setColor(Color.BLACK);
-            int inset = Math.max(2,size/4);
-            g.drawLine(x+inset,y+inset,x+size-inset-1,y+size-inset-1);
-            g.drawLine(x+size-inset-1,y+inset,x+inset,y+size-inset-1);
-        } else if (size >= 8) {
-            g.setColor(palette.textColor(fill));
-            g.setFont(tetris.ui.theme.GameTheme.text(Math.max(8, size * 2 / 3), false));
-            String letter = String.valueOf(BlockType.values()[value - 1].letter());
-            tetris.ui.theme.UiKit.drawInBox(g, letter, new java.awt.Rectangle(x, y, size, size), tetris.ui.theme.UiKit.Align.CENTER);
-        }
+        // 보스 레이드와 같은 보석 칸·글자 (BlockCells)
+        BlockType type = BlockType.values()[value - 1];
+        Color fill = palette.color(type, colorBlind);
+        BlockCells.paintBlock(g, x, y, size, fill, String.valueOf(type.letter()), palette.textColor(fill));
     }
 
 }
