@@ -103,6 +103,40 @@ class RaidInputRoutingTest {
         });
     }
 
+    /**
+     * 온라인 손님(P2): 이 PC의 키는 P1 자리(BattleKeyMap.online)로 들어온다. 예전에는 P2 차례에 이 키가 버려져
+     * 손님이 카드를 못 골랐고 10초 뒤 자동으로 넘어갔다. 이제 손님 키는 손님(P2)의 카드를 고른다
+     */
+    @Test
+    void onlineGuestKeysPickTheGuestsCard() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane root = new JRootPane();
+            FakeRaidClient cards = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.CARD_PICK));
+            try (var ignored = RaidScreenController.online(root, cards, new RaidPanel(false), PlayerId.TWO,
+                    ControlStyle.MODERN, () -> { }, () -> { })) {
+                key(root, KeyEvent.VK_RIGHT);
+                key(root, KeyEvent.VK_SPACE);
+                assertEquals(List.of(new FakeRaidClient.Pick(PlayerId.TWO, 2)), cards.picks());
+            }
+
+            FakeRaidClient hostCards = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.CARD_PICK));
+            try (var ignored = RaidScreenController.online(root, hostCards, new RaidPanel(false), PlayerId.ONE,
+                    ControlStyle.MODERN, () -> { }, () -> { })) {
+                key(root, KeyEvent.VK_LEFT);
+                key(root, KeyEvent.VK_SPACE);
+                assertEquals(List.of(new FakeRaidClient.Pick(PlayerId.ONE, 0)), hostCards.picks());
+            }
+
+            FakeRaidClient intro = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.BOSS_INTRO));
+            try (var ignored = RaidScreenController.online(root, intro, new RaidPanel(false), PlayerId.TWO,
+                    ControlStyle.MODERN, () -> { }, () -> { })) {
+                key(root, KeyEvent.VK_SPACE);
+                assertTrue(intro.sent().stream().anyMatch(c -> c.action() == tetris.feature.setting.GameAction.HARD_DROP
+                        && c.pressed()), "손님의 하드 드롭은 소개 준비로 보낸다 (ClientRaidClient가 P2로 실어 보낸다)");
+            }
+        });
+    }
+
     private static Object field(Object owner, String name) {
         try {
             var found = owner.getClass().getDeclaredField(name);

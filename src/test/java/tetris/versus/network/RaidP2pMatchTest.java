@@ -105,17 +105,26 @@ class RaidP2pMatchTest {
         await(hs, snapshot -> snapshot.state() == State.PLAYING);
         now.set(RaidRules.INTRO_SPIN_MILLIS);
         tick();
-        // 클라이언트의 하드 드롭이 호스트에서 보스 소개를 건너뛴다
+        // 클라이언트의 하드 드롭은 호스트에서 P2의 준비로 들어간다. 한 사람만 누르면 소개는 이어진다
         run(clientExec, () -> client.raidClient().orElseThrow()
                 .send(new PlayerCommand(PlayerId.ONE, GameAction.HARD_DROP, true, 0)));
         run(clientExec, () -> client.raidClient().orElseThrow()
                 .send(new PlayerCommand(PlayerId.ONE, GameAction.HARD_DROP, false, 0)));
-        long skipDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (call(hostExec, () -> ((HostRaidClient) host.raidClient().orElseThrow()).snapshot().phase())
-                == RaidPhase.BOSS_INTRO && System.nanoTime() < skipDeadline) {
-            now.addAndGet(16);
+        long readyDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
+        while (!call(hostExec, () -> ((HostRaidClient) host.raidClient().orElseThrow()).snapshot().introReadyFor(1))
+                && System.nanoTime() < readyDeadline) {
+            Thread.sleep(5);
             tick();
         }
+        RaidSnapshot waiting = call(hostExec, () -> ((HostRaidClient) host.raidClient().orElseThrow()).snapshot());
+        assertEquals(RaidPhase.BOSS_INTRO, waiting.phase(), mode + " 한 사람만 눌러서는 소개가 끝나지 않는다");
+        assertTrue(waiting.introReadyFor(1) && !waiting.introReadyFor(0), mode + " 클라이언트 입력은 P2 준비다");
+        // 호스트까지 누르면 카운트다운
+        run(hostExec, () -> host.raidClient().orElseThrow()
+                .send(new PlayerCommand(PlayerId.ONE, GameAction.HARD_DROP, true, 0)));
+        run(hostExec, () -> host.raidClient().orElseThrow()
+                .send(new PlayerCommand(PlayerId.ONE, GameAction.HARD_DROP, false, 0)));
+        tick();
         assertEquals(RaidPhase.COUNTDOWN,
                 call(hostExec, () -> ((HostRaidClient) host.raidClient().orElseThrow()).snapshot().phase()));
         now.addAndGet(RaidRules.COUNTDOWN_MILLIS);
