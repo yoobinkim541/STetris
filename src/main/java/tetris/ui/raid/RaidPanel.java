@@ -426,7 +426,7 @@ public final class RaidPanel extends JPanel {
     private BufferedImage restPlate() {
         var one = snapshot.bossFor(0);
         var two = snapshot.mode() == RaidMode.RACE ? snapshot.bossFor(1) : null;
-        long key = plateStamp * 31 + one.id().ordinal() * 7L + one.level() * 1009L
+        long key = plateStamp * 31 + one.id().ordinal() * 7L + one.level() * 1009L + (motion.gone() ? 13L : 0L)
                 + (two == null ? 0 : two.id().ordinal() * 100_003L + two.level() * 1_000_003L);
         if (restPlate != null && restStamp == key && restPlate.getWidth() == plate.getWidth()
                 && restPlate.getHeight() == plate.getHeight()) {
@@ -482,7 +482,7 @@ public final class RaidPanel extends JPanel {
     }
 
     private void paintLiveLedge(Graphics2D g, RaidSnapshot.BossView boss, Rectangle window, boolean crop) {
-        if (boss == null || window.width <= 0) return;
+        if (boss == null || window.width <= 0 || motion.gone()) return;
         BufferedImage image = crop
                 ? motion.raceCrop(assets, boss.id(), boss.level(), window.width, window.height)
                 : assets.ledge(boss.id(), boss.level(), window.width);
@@ -2013,6 +2013,15 @@ public final class RaidPanel extends JPanel {
         lines.add("Lv.2부터");
         lines.add("• 잡으면 보상 카드를 2장 고른다");
         lines.add("10초 뒤 시작  ·  하드 드롭 또는 Enter로 바로 시작");
+        for (PatternId id : PatternId.values()) lines.add(shown(id.displayName() + "  ·  " + id.shortEffect()));
+        lines.add("석상 골렘의 바위 투척!");
+        lines.add("→ 나");
+        lines.add("→ P1");
+        lines.add("→ P2");
+        lines.add("→ 모두");
+        lines.add("도망치기 전에 잡기");
+        lines.add("일시정지 키로 다시 시작합니다");
+        lines.add("나가기 키로 레이드를 끝낼 수 있습니다");
         for (PatternId id : PatternId.values()) {
             lines.add(shown(id.displayName()));
             lines.add(shown(id.description()));

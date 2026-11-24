@@ -35,6 +35,8 @@ final class BossMotion {
     private int intro = -1;
     private int defeat = -1;
     private int attack = -1;
+    /** 처치 페이드가 끝난 뒤 다음 보스가 나올 때까지 숨긴다 (카드 고르는 동안 죽은 보스가 다시 보이지 않게) */
+    private boolean gone;
     private BossId shown;
     private int shownLevel;
 
@@ -44,6 +46,7 @@ final class BossMotion {
             shownLevel = level;
             trail = hp;
             defeat = -1;
+            gone = false;
             if (events != null) {
                 for (RaidEvent event : events) {
                     if (event.type() == RaidEvent.Type.BOSS_SPAWN) intro = INTRO_FRAMES;
@@ -61,7 +64,7 @@ final class BossMotion {
                     recoil = Math.max(recoil, Math.min(16, 4 + amount / 18));
                 }
                 case BOSS_DEFEATED -> {
-                    if (defeat < 0) {
+                    if (defeat < 0 && !gone) {
                         defeat = DEFEAT_FRAMES;
                         spawnShards();
                     }
@@ -69,6 +72,7 @@ final class BossMotion {
                 case BOSS_SPAWN -> {
                     intro = INTRO_FRAMES;
                     defeat = -1;
+                    gone = false;
                 }
                 case BOSS_ATTACK -> attack = ATTACK_FRAMES;
                 default -> {
@@ -87,7 +91,10 @@ final class BossMotion {
         }
         if (defeat > 0) {
             defeat--;
-            if (defeat == 0) defeat = -1;
+            if (defeat == 0) {
+                defeat = -1;
+                gone = true;
+            }
         }
         if (attack > 0) attack--;
         for (Dust bit : dust) if (bit != null && bit.life > 0) bit.tick();
@@ -120,6 +127,11 @@ final class BossMotion {
     boolean idle() {
         return intro <= 0 && recoil <= 0 && attack <= 0 && defeat < 0;
     }
+
+    /** 처치 연출이 끝나 다음 보스를 기다리는 중이면 보스를 그리지 않는다 */
+    boolean gone() {
+        return gone;
+    }
     /** 공격 진행 0..1. 공격 중이 아니면 -1 */
     float attackProgress() {
         if (attack <= 0 || StarfieldBackground.lowEffects()) return -1f;
@@ -135,11 +147,12 @@ final class BossMotion {
         return Math.round(14f * (1f - easeOut((t - 0.45f) / 0.55f)));
     }
 
-    /** 내리찍는 순간 살짝 커졌다가 돌아온다 */
+    /** 내리찍는 순간 살짝 커졌다가 돌아온다. 두 단계로만 바꿔 장치 크기 그림을 매 프레임 새로 만들지 않는다 */
     float attackScale() {
         float t = attackProgress();
         if (t < 0.3f || t > 0.8f) return 1f;
-        return 1f + 0.06f * (float) Math.sin(Math.PI * (t - 0.3f) / 0.5f);
+        double bump = Math.sin(Math.PI * (t - 0.3f) / 0.5f);
+        return bump > 0.66 ? 1.06f : bump > 0.2 ? 1.03f : 1f;
     }
 
     private static float easeOut(float t) {
