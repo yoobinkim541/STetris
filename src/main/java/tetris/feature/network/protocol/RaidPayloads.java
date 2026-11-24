@@ -78,7 +78,8 @@ public final class RaidPayloads {
                 .put("phase", snapshot.phase().name())
                 .put("kills", snapshot.kills())
                 .put("elapsedMillis", snapshot.elapsedMillis())
-                .put("gauge", snapshot.gauge());
+                .put("gauge", snapshot.gauge())
+                .put("introMillis", snapshot.introMillis());
         payload.set("boss", bossJson(snapshot.boss()));
         ArrayNode players = payload.putArray("players");
         for (RaidSnapshot.PlayerView player : snapshot.players()) players.add(playerJson(player));
@@ -125,6 +126,7 @@ public final class RaidPayloads {
         int kills = intField(payload, "kills");
         long elapsed = longField(payload, "elapsedMillis");
         int gauge = intField(payload, "gauge");
+        long intro = longField(payload, "introMillis");
         RaidSnapshot.BossView boss = readBoss(objectField(payload, "boss"));
         JsonNode playerNode = payload.get("players");
         if (playerNode == null || !playerNode.isArray()) throw new ProtocolException(ErrorCode.INVALID_FIELD, "players");
@@ -153,7 +155,7 @@ public final class RaidPayloads {
         int[] raceGauges = payload.has("raceGauges") ? intsField(payload, "raceGauges") : new int[0];
         String id = raidId == null ? "raid" : raidId;
         return construct(() -> new RaidSnapshot(id, revision, mode, phase, boss, players, kills, elapsed, gauge,
-                offer, events, result, raceBosses, raceKills, raceGauges));
+                offer, events, result, raceBosses, raceKills, raceGauges, intro));
     }
 
     private static ObjectNode bossJson(RaidSnapshot.BossView boss) {

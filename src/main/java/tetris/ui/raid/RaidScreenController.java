@@ -46,6 +46,7 @@ public final class RaidScreenController implements AutoCloseable {
     private boolean confirmYes;
     private boolean closed;
     private long sequence;
+    private final PlayerId skipAs;
 
     public RaidScreenController(JRootPane root, RaidClient client, RaidPanel panel, KeyMap soloKeys, boolean solo,
                                 ControlStyle style, Runnable onMenu, Runnable onRetry) {
@@ -61,10 +62,12 @@ public final class RaidScreenController implements AutoCloseable {
         this.onMenu = Objects.requireNonNull(onMenu, "onMenu");
         this.onRetry = Objects.requireNonNull(onRetry, "onRetry");
         Objects.requireNonNull(style, "style");
+        this.skipAs = onlineViewer == null ? PlayerId.ONE : onlineViewer;
         panel.setGuide(onlineViewer != null ? onlineGuide() : guide(solo, soloKeys));
         panel.setResultActions(this::goMenu, this::goRetry);
         panel.setConfirmAction(this::cancelConfirm);
         panel.setCardPointer(this::onCardPointer);
+        panel.setIntroControls(introHint(solo, soloKeys, onlineViewer != null), this::skipIntro);
         try {
             if (onlineViewer != null) {
                 battleRouter = new BattleInputRouter(root, BattleKeyMap.online(), this::onCommand, this::accepts);
@@ -102,7 +105,11 @@ public final class RaidScreenController implements AutoCloseable {
         if (closed) return;
         if (soloRouter != null) soloRouter.clearPressedKeys();
         if (battleRouter != null) battleRouter.clearPressedKeys();
-        if (current != null && current.phase() == RaidPhase.PLAYING && !confirming) sendPause();
+        if (current != null && !confirming && (current.phase() == RaidPhase.PLAYING
+                || current.phase() == RaidPhase.BOSS_INTRO || current.phase() == RaidPhase.COUNTDOWN)) {
+            // 소개·카운트다운 중에 창을 떠나도 자리를 비운 채 판이 시작되지 않게 멈춘다
+            sendPause();
+        }
     }
 
     /** 결과 화면에서 고른 버튼을 누른다 */
@@ -151,6 +158,9 @@ public final class RaidScreenController implements AutoCloseable {
         if (current.phase() == RaidPhase.CARD_PICK) {
             return action == GameAction.MOVE_LEFT || action == GameAction.MOVE_RIGHT
                     || action == GameAction.HARD_DROP || action == GameAction.QUIT;
+        }
+        if (current.phase() == RaidPhase.BOSS_INTRO) {
+            return action == GameAction.HARD_DROP || action == GameAction.PAUSE || action == GameAction.QUIT;
         }
         if (action == GameAction.PAUSE || action == GameAction.QUIT) return true;
         return current.phase() == RaidPhase.PLAYING;
@@ -230,7 +240,25 @@ public final class RaidScreenController implements AutoCloseable {
             panel.activateResult();
             return;
         }
+        if (current != null && current.phase() == RaidPhase.BOSS_INTRO) {
+            skipIntro();
+            return;
+        }
         if (!solo && current != null && current.phase() == RaidPhase.PLAYING) client.ultimate(PlayerId.TWO);
+    }
+
+    /** 엔진이 하드 드롭으로 소개를 건너뛴다. 룰렛이 도는 동안은 엔진이 무시한다 */
+    private void skipIntro() {
+        if (closed || confirming || current == null || current.phase() != RaidPhase.BOSS_INTRO) return;
+        client.send(new PlayerCommand(skipAs, GameAction.HARD_DROP, true, sequence++));
+        client.send(new PlayerCommand(skipAs, GameAction.HARD_DROP, false, sequence++));
+    }
+
+    static String introHint(boolean solo, KeyMap keys, boolean online) {
+        if (online) return "하드 드롭으로 바로 시작";
+        if (!solo) return "하드 드롭 또는 Enter로 바로 시작";
+        KeyMap map = keys == null ? new KeyMap() : keys;
+        return Messages.keyName(map, GameAction.HARD_DROP) + " 또는 Enter로 바로 시작";
     }
 
     private void beginQuit() {
@@ -239,7 +267,8 @@ public final class RaidScreenController implements AutoCloseable {
         panel.setConfirm(true, false);
         if (battleRouter != null) battleRouter.clearGameplayKeys();
         if (soloRouter != null) soloRouter.clearPressedKeys();
-        if (current != null && current.phase() == RaidPhase.PLAYING) {
+        if (current != null && (current.phase() == RaidPhase.PLAYING
+                || current.phase() == RaidPhase.BOSS_INTRO || current.phase() == RaidPhase.COUNTDOWN)) {
             pausedForConfirm = true;
             sendPause();
         }

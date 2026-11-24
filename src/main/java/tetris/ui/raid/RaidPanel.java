@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.function.BiConsumer;
 import javax.swing.JPanel;
 import tetris.component.block.BlockType;
+import tetris.feature.raid.BossRoulette;
+import tetris.feature.raid.RaidRules;
 import tetris.feature.raid.api.BossId;
 import tetris.feature.raid.api.CardId;
 import tetris.feature.raid.api.PatternId;
@@ -69,6 +71,8 @@ public final class RaidPanel extends JPanel {
     private Runnable onRetry = () -> { };
     private Runnable onCancelConfirm = () -> setConfirm(false, false);
     private BiConsumer<Integer, Boolean> cardPointer = (index, confirm) -> { };
+    private String introHint = "하드 드롭으로 바로 시작";
+    private Runnable onSkipIntro = () -> { };
     private long countdownAnchor = -1;
     private long lastRevision = Long.MIN_VALUE;
     private int stolenSlower = -1;
@@ -97,7 +101,7 @@ public final class RaidPanel extends JPanel {
 
     public RaidPanel(boolean colorBlind) {
         this.colorBlind = colorBlind;
-        boards = new BoardRenderer(colorBlind, true); // 블록·착지 표시는 클래식 게임 화면과 같게
+        boards = new BoardRenderer(colorBlind); // 블록·착지 표시는 모든 게임 화면이 같은 BlockCells를 쓴다
         fx.setColorBlind(colorBlind);
         setOpaque(true);
         setBackground(new Color(0x07091A));
@@ -174,6 +178,12 @@ public final class RaidPanel extends JPanel {
         retryLabel = retry == null || retry.isBlank() ? "다시 하기" : retry;
     }
 
+    /** 보스 소개 아래 안내 문구와, 소개를 눌렀을 때 건너뛰는 동작 */
+    public void setIntroControls(String hint, Runnable skip) {
+        introHint = hint == null || hint.isBlank() ? "하드 드롭으로 바로 시작" : hint;
+        onSkipIntro = skip == null ? () -> { } : skip;
+    }
+
     public void setConnectionNotice(String notice) {
         connectionNotice = notice == null ? "" : notice;
         repaint();
@@ -240,6 +250,10 @@ public final class RaidPanel extends JPanel {
             cardSelection = hit;
             cardPointer.accept(hit, confirm);
             repaint();
+            return;
+        }
+        if (snapshot.phase() == RaidPhase.BOSS_INTRO && !confirming) {
+            if (BossRoulette.revealed(snapshot.introMillis())) onSkipIntro.run();
             return;
         }
         if (snapshot.phase() == RaidPhase.FINISHED) {
@@ -493,6 +507,7 @@ public final class RaidPanel extends JPanel {
         if (snapshot.phase() == RaidPhase.COUNTDOWN) paintVeil(g, String.valueOf(countdownDigit()), "곧 시작합니다");
         if (snapshot.phase() == RaidPhase.PAUSED && !confirming) paintVeil(g, "일시정지", "일시정지 키로 다시 시작합니다");
         if (snapshot.phase() == RaidPhase.CARD_PICK && snapshot.offer() != null) paintCards(g);
+        if (snapshot.phase() == RaidPhase.BOSS_INTRO) paintIntro(g);
         if (confirming) paintConfirm(g);
         if (snapshot.phase() == RaidPhase.FINISHED && snapshot.result() != null) paintResult(g);
         markBoss();
@@ -1287,6 +1302,196 @@ public final class RaidPanel extends JPanel {
         UiKit.drawCentered(g, "▼", x + w / 2, y - 6);
     }
 
+    private void paintIntro(Graphics2D g) {
+        long intro = snapshot.introMillis();
+        boolean revealed = BossRoulette.revealed(intro);
+        // 룰렛이 도는 동안은 위쪽 보스 그림까지 덮어 결과를 미리 보이지 않는다
+        g.setColor(new Color(4, 6, 16, revealed ? 226 : 246));
+        g.fillRect(0, 0, VW, VH);
+        if (revealed) paintBossInfo(g, snapshot.boss(), intro);
+        else paintRoulette(g, snapshot.boss(), intro);
+    }
+
+    private void paintRoulette(Graphics2D g, RaidSnapshot.BossView boss, long intro) {
+        BossId chosen = boss.id();
+        boolean stopped = BossRoulette.stopped(intro);
+        int lit = BossRoulette.slot(intro, chosen);
+        g.setFont(GameTheme.display(30));
+        g.setColor(TEXT);
+        GameTheme.drawCentered(g, "보스 추첨", VW / 2, 200);
+        String sub = !stopped ? "다음 상대를 고르는 중" : chosen == BossId.GOLDEN_TETRO ? "숨은 보스 등장!" : chosen.displayName() + " 등장!";
+        g.setFont(GameTheme.fontFor(sub, 16, false));
+        g.setColor(stopped ? (colorBlind ? A11yColors.YELLOW : new Color(0xFFE27A)) : DIM);
+        UiKit.drawCentered(g, sub, VW / 2, 232);
+        BossId[] ids = BossId.values();
+        int slotW = 100;
+        int slotH = 134;
+        int gap = 10;
+        int x0 = (VW - (slotW * ids.length + gap * (ids.length - 1))) / 2;
+        int y0 = 280;
+        int face = 76;
+        for (int i = 0; i < ids.length; i++) {
+            boolean on = i == lit;
+            int x = x0 + i * (slotW + gap);
+            int y = on ? y0 - 12 : y0;
+            Graphics2D slot = (Graphics2D) g.create();
+            try {
+                if (!on) slot.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.5f));
+                slot.setColor(on ? new Color(12, 28, 52, 245) : new Color(10, 15, 34, 236));
+                slot.fillRoundRect(x + 6, y + 6, slotW - 12, slotH - 12, 12, 12);
+                UiKit.paintFrame(slot, on ? UiKit.Tone.CYAN : UiKit.Tone.VIOLET, x, y, slotW, slotH);
+                // 황금 테트로는 숨은 보스라 뽑히기 전까지 얼굴을 가린다
+                boolean hidden = ids[i] == BossId.GOLDEN_TETRO && !(stopped && chosen == BossId.GOLDEN_TETRO);
+                int fx0 = x + (slotW - face) / 2;
+                int fy0 = y + 14;
+                BufferedImage image = hidden ? null : assets.portrait(ids[i], AssetStore.devicePixels(slot, face));
+                if (image != null) slot.drawImage(image, fx0, fy0, face, face, null);
+                else if (hidden) {
+                    slot.setFont(GameTheme.display(40));
+                    slot.setColor(new Color(0xFFC94D));
+                    UiKit.drawInBox(slot, "?", new Rectangle(fx0, fy0, face, face), UiKit.Align.CENTER);
+                } else paintBossFallback(slot, ids[i], fx0, fy0, face);
+                String name = hidden ? "???" : ids[i].displayName();
+                slot.setFont(GameTheme.fontFor(name, 13, false));
+                slot.setColor(TEXT);
+                UiKit.drawInBox(slot, name, new Rectangle(x + 6, y + slotH - 36, slotW - 12, 24), UiKit.Align.CENTER);
+            } finally {
+                slot.dispose();
+            }
+            if (on) {
+                g.setFont(GameTheme.text(16, true));
+                g.setColor(A11yColors.selected(colorBlind));
+                UiKit.drawCentered(g, "▼", x + slotW / 2, y - 8);
+            }
+        }
+        String level = "Lv." + boss.level() + (snapshot.kills() > 0 ? "  ·  처치 " + snapshot.kills() : "");
+        g.setFont(GameTheme.fontFor(level, 15, false));
+        g.setColor(DIM);
+        UiKit.drawCentered(g, level, VW / 2, y0 + slotH + 48);
+    }
+
+    private void paintBossInfo(Graphics2D g, RaidSnapshot.BossView boss, long intro) {
+        BossId id = boss.id();
+        boolean golden = id == BossId.GOLDEN_TETRO;
+        int x = 24;
+        int y = 92;
+        int w = VW - 48;
+        int h = 556;
+        g.setColor(new Color(8, 12, 28, 244));
+        g.fillRoundRect(x + 8, y + 8, w - 16, h - 16, 18, 18);
+        UiKit.paintFrame(g, golden ? UiKit.Tone.MAGENTA : UiKit.Tone.VIOLET, x, y, w, h);
+        Color accent = colorBlind ? A11yColors.YELLOW : new Color(0xFFE27A);
+        String caption = golden ? "숨은 보스 등장!" : "보스 등장";
+        g.setFont(GameTheme.text(15, true));
+        g.setColor(accent);
+        UiKit.drawCentered(g, caption, VW / 2, y + 40);
+        String title = id.displayName() + "  Lv." + boss.level();
+        g.setFont(GameTheme.fontFor(title, 30, false));
+        g.setColor(TEXT);
+        UiKit.drawCentered(g, title, VW / 2, y + 78);
+
+        int size = 150;
+        int px = x + 30;
+        int py = y + 100;
+        UiKit.paintFrame(g, UiKit.Tone.CYAN, px - 8, py - 8, size + 16, size + 16);
+        BufferedImage image = assets.boss(id, boss.level(), AssetStore.devicePixels(g, size));
+        if (image != null) g.drawImage(image, px, py, size, size, null);
+        else paintBossFallback(g, id, px, py, size);
+
+        int rx = px + size + 30;
+        int rw = x + w - 30 - rx;
+        String hp = "HP " + boss.maxHp();
+        g.setFont(GameTheme.fontFor(hp, 20, true));
+        g.setColor(TEXT);
+        UiKit.drawInBox(g, hp, new Rectangle(rx, py, rw, 28), UiKit.Align.LEFT);
+        String rhythm = golden ? "도망까지 " + RaidRules.GOLDEN_FLEE_MILLIS / 1000 + "초"
+                : "조각 " + RaidRules.countdown(boss.level()) + "개마다 공격";
+        g.setFont(GameTheme.fontFor(rhythm, 17, false));
+        g.setColor(accent);
+        UiKit.drawInBox(g, rhythm, new Rectangle(rx, py + 34, rw, 26), UiKit.Align.LEFT);
+        g.setFont(GameTheme.text(14, false));
+        g.setColor(DIM);
+        List<String> about = tetris.ui.theme.TextWrap.lines(id.tagline(), g.getFontMetrics(), rw, 3);
+        for (int i = 0; i < about.size(); i++) {
+            UiKit.drawInBox(g, about.get(i), new Rectangle(rx, py + 70 + i * 22, rw, 22), UiKit.Align.LEFT);
+        }
+
+        int listY = py + size + 30;
+        g.setFont(GameTheme.display(17));
+        g.setColor(TEXT);
+        UiKit.drawInBox(g, golden ? "규칙" : "패턴", new Rectangle(x + 30, listY, 200, 24), UiKit.Align.LEFT);
+        int rowY = listY + 30;
+        if (golden) {
+            String[] rules = {
+                "공격하지 않는다. 대신 " + RaidRules.GOLDEN_FLEE_MILLIS / 1000 + "초 뒤 도망간다",
+                "잡으면 보상 카드를 2장 고른다",
+                "놓치면 다음 보스로 넘어가고 레벨은 그대로다"};
+            g.setFont(GameTheme.text(14, false));
+            for (String rule : rules) {
+                g.setColor(TEXT);
+                UiKit.drawInBox(g, "• " + rule, new Rectangle(x + 36, rowY, w - 72, 26), UiKit.Align.LEFT);
+                rowY += 34;
+            }
+        } else {
+            PatternId[] roster = tetris.feature.raid.PatternPicker.roster(id);
+            for (int i = 0; i < roster.length; i++) {
+                paintPatternRow(g, roster[i], i == roster.length - 1, boss.level(), x + 30, rowY, w - 60);
+                rowY += 60;
+            }
+        }
+
+        int barX = x + 30;
+        int barW = w - 60;
+        int barY = y + h - 66;
+        double left = Math.min(1.0, Math.max(0, intro) / (double) RaidRules.INTRO_INFO_MILLIS);
+        g.setColor(new Color(255, 255, 255, 40));
+        g.fillRoundRect(barX, barY, barW, 8, 8, 8);
+        g.setColor(colorBlind ? A11yColors.SKY : UiKit.CYAN);
+        g.fillRoundRect(barX, barY, Math.max(8, (int) Math.round(barW * left)), 8, 8, 8);
+        String footer = BossRoulette.secondsLeft(intro) + "초 뒤 시작  ·  " + introHint;
+        g.setFont(GameTheme.fontFor(footer, 14, false));
+        g.setColor(TEXT);
+        UiKit.drawCentered(g, footer, VW / 2, barY + 34);
+    }
+
+    private void paintPatternRow(Graphics2D g, PatternId pattern, boolean signature, int level, int x, int y, int w) {
+        int icon = 40;
+        g.setColor(new Color(16, 20, 44, 230));
+        g.fillRoundRect(x, y, w, 54, 12, 12);
+        BufferedImage image = assets.scaled(AssetStore.patternPath(pattern), AssetStore.devicePixels(g, icon),
+                AssetStore.devicePixels(g, icon));
+        if (image != null) g.drawImage(image, x + 8, y + 7, icon, icon, null);
+        int tx = x + icon + 18;
+        int tw = x + w - 10 - tx;
+        g.setFont(GameTheme.display(16));
+        g.setColor(TEXT);
+        String name = pattern.displayName();
+        UiKit.drawInBox(g, name, new Rectangle(tx, y + 4, tw, 22), UiKit.Align.LEFT);
+        String tag = pattern == PatternId.SPLIT ? "HP 50%" : signature ? (level >= 2 ? "필살 패턴" : "Lv.2부터") : "";
+        if (!tag.isEmpty()) {
+            int nameW = g.getFontMetrics().stringWidth(name);
+            g.setFont(GameTheme.fontFor(tag, 12, true));
+            int tagW = g.getFontMetrics().stringWidth(tag) + 14;
+            Rectangle chip = new Rectangle(tx + nameW + 10, y + 6, tagW, 18);
+            g.setColor(new Color(0x9B6BFF));
+            g.drawRoundRect(chip.x, chip.y, chip.width, chip.height, 10, 10);
+            g.setColor(colorBlind ? A11yColors.YELLOW : new Color(0xFFE27A));
+            UiKit.drawInBox(g, tag, chip, UiKit.Align.CENTER);
+        }
+        g.setFont(GameTheme.text(13, false));
+        g.setColor(DIM);
+        List<String> lines = tetris.ui.theme.TextWrap.lines(pattern.description(), g.getFontMetrics(), tw, 1);
+        if (tetris.ui.theme.TextWrap.overflows(lines, g.getFontMetrics(), tw, 1)) {
+            g.setFont(GameTheme.text(11, false));
+            lines = tetris.ui.theme.TextWrap.lines(pattern.description(), g.getFontMetrics(), tw, 2);
+            for (int i = 0; i < lines.size(); i++) {
+                UiKit.drawInBox(g, lines.get(i), new Rectangle(tx, y + 25 + i * 13, tw, 14), UiKit.Align.LEFT);
+            }
+            return;
+        }
+        if (!lines.isEmpty()) UiKit.drawInBox(g, lines.get(0), new Rectangle(tx, y + 28, tw, 20), UiKit.Align.LEFT);
+    }
+
     private void paintVeil(Graphics2D g, String title, String hint) {
         veilBoards(g);
         int y = scene.play[0].height > 0 ? scene.play[0].y + scene.play[0].height / 2 : VH / 2;
@@ -1521,6 +1726,25 @@ public final class RaidPanel extends JPanel {
 
     public static java.util.List<String> captions() {
         java.util.ArrayList<String> lines = new java.util.ArrayList<>();
+        for (BossId id : BossId.values()) {
+            lines.add(shown(id.displayName()));
+            lines.add(shown(id.tagline()));
+        }
+        lines.add("보스 추첨");
+        lines.add("다음 상대를 고르는 중");
+        lines.add("숨은 보스 등장!");
+        lines.add("보스 등장");
+        lines.add("???");
+        lines.add("HP 215");
+        lines.add("조각 8개마다 공격");
+        lines.add("도망까지 15초");
+        lines.add("패턴");
+        lines.add("규칙");
+        lines.add("HP 50%");
+        lines.add("필살 패턴");
+        lines.add("Lv.2부터");
+        lines.add("• 잡으면 보상 카드를 2장 고른다");
+        lines.add("10초 뒤 시작  ·  하드 드롭 또는 Enter로 바로 시작");
         for (PatternId id : PatternId.values()) {
             lines.add(shown(id.displayName()));
             lines.add(shown(id.description()));

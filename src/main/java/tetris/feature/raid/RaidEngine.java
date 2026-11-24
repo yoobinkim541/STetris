@@ -64,9 +64,10 @@ public final class RaidEngine {
     private long playClock;
     private long elapsed;
     private long revision;
-    private RaidPhase phase = RaidPhase.COUNTDOWN;
-    private RaidPhase pausedFrom = RaidPhase.COUNTDOWN;
+    private RaidPhase phase = RaidPhase.BOSS_INTRO;
+    private RaidPhase pausedFrom = RaidPhase.BOSS_INTRO;
     private long countdownLeft = RaidRules.COUNTDOWN_MILLIS;
+    private long introLeft = RaidRules.INTRO_MILLIS;
     private RaidSnapshot snapshot;
     private boolean closed;
 
@@ -146,7 +147,6 @@ public final class RaidEngine {
         }
         rollBoss(false);
         if (config.mode() == RaidMode.RACE) initRaceLanes();
-        phase = RaidPhase.COUNTDOWN;
         publish();
     }
 
@@ -200,6 +200,8 @@ public final class RaidEngine {
                 playClock += dt;
                 elapsed += dt;
                 if (bossId == BossId.GOLDEN_TETRO) fleeLeft -= dt;
+            } else if (phase == RaidPhase.BOSS_INTRO) {
+                introLeft -= dt;
             } else if (phase == RaidPhase.COUNTDOWN) {
                 countdownLeft -= dt;
             } else if (phase == RaidPhase.CARD_PICK) {
@@ -214,8 +216,11 @@ public final class RaidEngine {
                 return;
             }
         }
+        // 소개가 늦게 끝난 만큼 카운트다운을 줄인다
+        if (phase == RaidPhase.BOSS_INTRO && introLeft <= 0) endIntro(RaidRules.COUNTDOWN_MILLIS + introLeft);
         if (phase == RaidPhase.COUNTDOWN && countdownLeft <= 0) {
             phase = RaidPhase.PLAYING;
+            raceAdvanced = false;
             resumePlaying();
         }
         if (phase == RaidPhase.CARD_PICK && offerLeft <= 0) applyPick(chooser, 1);
@@ -287,6 +292,13 @@ public final class RaidEngine {
                     return;
                 }
                 togglePause();
+                continue;
+            }
+            if (phase == RaidPhase.BOSS_INTRO) {
+                // 룰렛이 도는 동안은 결과를 보여 주고, 능력 소개부터 하드 드롭으로 건너뛴다
+                if (action == GameAction.HARD_DROP && introLeft <= RaidRules.INTRO_INFO_MILLIS) {
+                    endIntro(RaidRules.COUNTDOWN_MILLIS);
+                }
                 continue;
             }
             if (phase != RaidPhase.PLAYING || !fighters[i].alive) continue;
@@ -692,9 +704,25 @@ public final class RaidEngine {
 
     private void finishCards() {
         rollBoss(true);
-        phase = RaidPhase.PLAYING;
-        resumePlaying();
-        settleSpawns();
+    }
+
+    /** 새 보스마다 룰렛과 능력 소개를 띄운다. 그동안 보드는 멈춘다 */
+    private void beginIntro() {
+        for (Fighter fighter : fighters) {
+            fighter.held.clear();
+            fighter.repeat.clear();
+        }
+        for (GameSession session : sessions) {
+            if (session.getState() == GameState.PLAYING || session.getState() == GameState.CLEARING) session.pause();
+        }
+        introLeft = RaidRules.INTRO_MILLIS;
+        phase = RaidPhase.BOSS_INTRO;
+    }
+
+    private void endIntro(long countdown) {
+        introLeft = 0;
+        countdownLeft = countdown;
+        phase = RaidPhase.COUNTDOWN;
     }
 
     private void rollBoss(boolean killedPrevious) {
@@ -730,6 +758,7 @@ public final class RaidEngine {
             telegraph();
         }
         events.add(new RaidEvent(RaidEvent.Type.BOSS_SPAWN, -1, bossId.ordinal()));
+        beginIntro();
     }
 
     private void refillBag() {
@@ -804,6 +833,8 @@ public final class RaidEngine {
         if (phase == RaidPhase.PAUSED) {
             phase = pausedFrom;
             if (phase == RaidPhase.PLAYING) resumePlaying();
+            // 화면의 3·2·1은 카운트다운에 들어올 때부터 세므로, 다시 시작하면 처음부터 센다
+            if (phase == RaidPhase.COUNTDOWN) countdownLeft = RaidRules.COUNTDOWN_MILLIS;
             return;
         }
         pausedFrom = phase;
@@ -854,7 +885,7 @@ public final class RaidEngine {
         }
         return new RaidSnapshot(raidId, revision, config.mode(), shown, boss, players, shownKills, elapsed,
                 shownGauge, cardOffer, List.copyOf(events), shown == RaidPhase.FINISHED ? result : null,
-                raceBosses, raceKills, raceGauges);
+                raceBosses, raceKills, raceGauges, shown == RaidPhase.BOSS_INTRO ? Math.max(0, introLeft) : 0);
     }
 
     private RaidSnapshot.BossView bossView() {
@@ -1178,6 +1209,7 @@ public final class RaidEngine {
             }
         }
         events.add(new RaidEvent(RaidEvent.Type.BOSS_SPAWN, -1, bossId.ordinal()));
+        beginIntro();
     }
 
     private void fireRaceUltimate(int player) {

@@ -25,6 +25,7 @@ import tetris.component.block.Block;
 import tetris.feature.game.GameSession;
 import tetris.feature.game.GameSnapshot;
 import tetris.feature.game.GameState;
+import tetris.feature.raid.BossRoulette;
 import tetris.feature.raid.LocalRaidClient;
 import tetris.feature.raid.api.RaidConfig;
 import tetris.feature.raid.api.RaidMode;
@@ -163,7 +164,8 @@ public final class PlayHarness {
     private void leaveVersus() throws Exception {
         SwingUtilities.invokeLater(() -> dispatch(KeyEvent.VK_ESCAPE));
         long deadline = System.currentTimeMillis() + 3_000;
-        while (System.currentTimeMillis() < deadline && !dialogOpen()) sleep(40);
+        // 창이 보인 뒤에도 포커스는 조금 늦게 넘어간다. 키는 기권 창이 포커스를 받은 뒤에 보낸다
+        while (System.currentTimeMillis() < deadline && !dialogFocused()) sleep(40);
         SwingUtilities.invokeLater(() -> {
             Component focus = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
             if (focus == null) return;
@@ -175,18 +177,17 @@ public final class PlayHarness {
             focus.dispatchEvent(new KeyEvent(focus, KeyEvent.KEY_PRESSED, when, 0, KeyEvent.VK_ENTER, KeyEvent.CHAR_UNDEFINED));
             focus.dispatchEvent(new KeyEvent(focus, KeyEvent.KEY_RELEASED, when, 0, KeyEvent.VK_ENTER, KeyEvent.CHAR_UNDEFINED));
         });
-        await("versus menu", () -> screen() == MainFrame.Screen.BATTLE_MODES || screen() == MainFrame.Screen.MAIN_MENU);
-        if (screen() == MainFrame.Screen.BATTLE_MODES) {
-            key(KeyEvent.VK_ESCAPE);
-            await("main from versus", () -> screen() == MainFrame.Screen.MAIN_MENU);
-        }
+        // 기권하면 대전 결과 화면이 뜨고, Esc가 메인 메뉴로 간다
+        await("versus result", () -> screen() == MainFrame.Screen.BATTLE_RESULT);
+        key(KeyEvent.VK_ESCAPE);
+        await("main from versus", () -> screen() == MainFrame.Screen.MAIN_MENU);
     }
 
-    private boolean dialogOpen() {
-        for (java.awt.Window window : java.awt.Window.getWindows()) {
-            if (window.isShowing() && window != frame) return true;
-        }
-        return false;
+    private boolean dialogFocused() {
+        Component focus = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+        if (focus == null) return false;
+        java.awt.Window window = SwingUtilities.getWindowAncestor(focus);
+        return window != null && window != frame && window.isShowing();
     }
 
     private void raidSoloTwoKills() throws Exception {
@@ -194,19 +195,24 @@ public final class PlayHarness {
         if (broken()) return;
         choose(0, 1);
         await("raid countdown", () -> raid() != null);
-        await("raid playing", () -> raid().phase() == RaidPhase.PLAYING);
+        throughIntro("raid playing");
         if (broken()) return;
         assertAdvances("raid", this::raidSession);
         int kills = raid().kills();
         playUntilKills(kills + 1, 12_000);
         await("card", () -> raid().phase() == RaidPhase.CARD_PICK);
-        key(KeyEvent.VK_SPACE);
-        await("after key pick", () -> raid().phase() == RaidPhase.PLAYING && raid().kills() >= kills + 1);
+        // 황금 테트로를 잡으면 카드를 두 번 고른다. 카드 화면이 남아 있는 동안 하드 드롭으로 고른다
+        for (int pick = 0; pick < 3 && raid().phase() == RaidPhase.CARD_PICK; pick++) {
+            key(KeyEvent.VK_SPACE);
+            sleep(200);
+        }
+        throughIntro("after key pick");
+        if (raid().kills() < kills + 1) fail("after key pick", "kills=" + raid().kills());
         assertBossVisible("after-key-pick");
         playUntilKills(raid().kills() + 1, 12_000);
         await("card mouse", () -> raid().phase() == RaidPhase.CARD_PICK);
         clickCard();
-        await("after mouse pick", () -> raid().phase() == RaidPhase.PLAYING);
+        throughIntro("after mouse pick");
         assertBossVisible("after-mouse-pick");
         quitRaid();
     }
@@ -214,7 +220,8 @@ public final class PlayHarness {
     private void raidSoloThreeKills() throws Exception {
         if (broken()) return;
         choose(0, 1);
-        await("raid3", () -> raid() != null && raid().phase() == RaidPhase.PLAYING);
+        await("raid3", () -> raid() != null);
+        throughIntro("raid3");
         playUntilKills(3, 40_000);
         if (raid() != null && raid().kills() < 3) fail("solo 3 kills", "kills=" + raid().kills() + " phase=" + raid().phase());
         else assertBossVisible("three-kills");
@@ -223,7 +230,8 @@ public final class PlayHarness {
 
     private void coopThroughBoss() throws Exception {
         choose(2, 4);
-        await("coop", () -> raid() != null && raid().phase() == RaidPhase.PLAYING);
+        await("coop", () -> raid() != null);
+        throughIntro("coop");
         playUntilKills(1, 30_000);
         if (raid().kills() < 1) fail("coop kill", "kills=" + raid().kills());
         quitRaid();
@@ -231,7 +239,8 @@ public final class PlayHarness {
 
     private void raceSeveralKills() throws Exception {
         choose(2, 5);
-        await("race", () -> raid() != null && raid().phase() == RaidPhase.PLAYING);
+        await("race", () -> raid() != null);
+        throughIntro("race");
         long start = System.currentTimeMillis();
         while (System.currentTimeMillis() - start < 20_000 && raid().phase() == RaidPhase.PLAYING) {
             if (!raidSession().isSpawnPending()) DropBot.place(raidSession(), this::key);
@@ -344,7 +353,8 @@ public final class PlayHarness {
         while (System.currentTimeMillis() - start < budgetMillis) {
             RaidSnapshot snap = raid();
             if (snap == null) return;
-            if (snap.kills() >= target && snap.phase() == RaidPhase.PLAYING) return;
+            // 목표 처치에 닿으면 카드 화면에서 멈춘다. 카드는 부르는 쪽이 키나 마우스로 고른다
+            if (snap.kills() >= target && (snap.phase() == RaidPhase.PLAYING || snap.phase() == RaidPhase.CARD_PICK)) return;
             if (snap.phase() != stuck) {
                 stuck = snap.phase();
                 stuckAt = System.currentTimeMillis();
@@ -357,6 +367,8 @@ public final class PlayHarness {
             }
             if (snap.phase() == RaidPhase.CARD_PICK) {
                 key(KeyEvent.VK_SPACE);
+            } else if (snap.phase() == RaidPhase.BOSS_INTRO) {
+                if (BossRoulette.revealed(snap.introMillis())) key(KeyEvent.VK_SPACE);
             } else if (snap.phase() == RaidPhase.PLAYING && !raidSession().isSpawnPending()
                     && raidSession().getState() == GameState.PLAYING) {
                 DropBot.place(raidSession(), this::key);
@@ -365,6 +377,32 @@ public final class PlayHarness {
         }
         fail("raid budget", "kills=" + (raid() == null ? -1 : raid().kills()) + " phase="
                 + (raid() == null ? null : raid().phase()) + " " + census());
+    }
+
+    /** 보스 추첨이 멈추면 하드 드롭으로 소개를 건너뛰고, 카운트다운 뒤 플레이까지 기다린다 */
+    private void throughIntro(String what) throws Exception {
+        if (stopped) return;
+        long start = System.currentTimeMillis();
+        long deadline = start + 15_000;
+        StringBuilder trace = new StringBuilder();
+        RaidPhase last = null;
+        while (System.currentTimeMillis() < deadline) {
+            RaidSnapshot snap = raid();
+            if (snap != null && snap.phase() != last) {
+                last = snap.phase();
+                trace.append(System.currentTimeMillis() - start).append("ms ").append(last).append(' ');
+            }
+            if (snap != null && snap.phase() == RaidPhase.PLAYING) return;
+            if (snap != null && snap.phase() == RaidPhase.BOSS_INTRO && BossRoulette.revealed(snap.introMillis())) {
+                key(KeyEvent.VK_SPACE);
+            }
+            if (!errors.isEmpty()) {
+                fail(what, "exception " + errors.get(0));
+                return;
+            }
+            sleep(60);
+        }
+        fail(what, "intro timeout trace=" + trace + "revision=" + (raid() == null ? -1 : raid().revision()) + " " + census());
     }
 
     private void clickCard() throws Exception {
@@ -686,7 +724,9 @@ public final class PlayHarness {
             }
             int turns = Math.floorMod(bestRot - piece.getRotation(), 4);
             for (int i = 0; i < turns; i++) key.accept(KeyEvent.VK_UP);
-            int col = session.snapshot().currentBlock().getCol();
+            Block moved = session.snapshot().currentBlock();
+            if (moved == null) return; // 회전하는 사이 중력으로 고정됐다. 다음 조각에서 다시 고른다
+            int col = moved.getCol();
             while (col < bestCol) {
                 key.accept(KeyEvent.VK_RIGHT);
                 col++;

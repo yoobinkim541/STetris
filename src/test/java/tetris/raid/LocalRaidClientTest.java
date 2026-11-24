@@ -34,8 +34,8 @@ class LocalRaidClientTest {
                     latest.set(snapshot);
                     callbacks.incrementAndGet();
                 });
-                assertEquals(RaidPhase.COUNTDOWN, latest.get().phase());
-                now[0] = 3_000;
+                assertEquals(RaidPhase.BOSS_INTRO, latest.get().phase());
+                now[0] = tetris.feature.raid.RaidRules.INTRO_MILLIS + tetris.feature.raid.RaidRules.COUNTDOWN_MILLIS;
                 scheduler.fire();
                 assertEquals(RaidPhase.PLAYING, latest.get().phase());
                 client.send(new PlayerCommand(PlayerId.ONE, GameAction.PAUSE, true, 0));

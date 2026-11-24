@@ -1,6 +1,7 @@
 package tetris.ui;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
@@ -43,6 +44,19 @@ class GamePanelScoreTest {
             SwingUtilities.invokeAndWait(() -> holder[0].removeNotify());
             assertFalse(timer(panel[0]).isRunning(), "removeNotify stops the animation timer");
         }
+    }
+
+    @Test
+    void 첫_상태보다_타이머가_먼저_돌아도_점수가_음수로_보이지_않는다() {
+        // 화면이 창에 붙자마자 타이머가 돌고, 게임 상태는 그 뒤에 온다
+        PlayFx fx = new PlayFx();
+        for (int i = 0; i < 5; i++) fx.tick();
+        fx.noteScore(0);
+        fx.tick();
+        assertEquals(0, fx.displayScore());
+        fx.noteScore(120);
+        for (int i = 0; i < 200; i++) fx.tick();
+        assertEquals(120, fx.displayScore());
     }
 
     private static void assertMoves(PlayFx fx) throws Exception {

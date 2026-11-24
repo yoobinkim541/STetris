@@ -217,17 +217,19 @@ public class ScoreBoardPanel extends JPanel {
         }
         if (afterGame) {
             List<String> options = List.of(Messages.get("scoreboard.mainMenu"), Messages.get("scoreboard.exit"));
-            g2.setFont(Theme.text(unit, true));
+            int fontSize = Math.max(16, unit);
+            g2.setFont(Theme.text(fontSize, true));
             int widest = 0;
             for (String option : options) widest = Math.max(widest, g2.getFontMetrics().stringWidth(option));
-            int buttonWidth = widest + unit * 3;
-            int buttonHeight = unit + unit / 2;
-            int gap = Math.max(6, unit / 3);
+            // 좁은 버튼은 테두리 그림이 글자 칸을 밀어내 글자가 한쪽으로 쏠렸다. 메인 메뉴 버튼처럼 넉넉히 잡는다
+            int buttonWidth = Math.min(w - fontSize * 4, Math.max(widest + fontSize * 4, w * 2 / 5));
+            int buttonHeight = fontSize + fontSize / 2;
+            int gap = Math.max(8, (fontSize / 3 + 4) / 8 * 8);
             int optionTop = bottom + unit / 2;
             int optionX = w / 2 - buttonWidth / 2;
             hits.add("option:0", optionX, optionTop, buttonWidth, buttonHeight);
             hits.add("option:1", optionX, optionTop + buttonHeight + gap, buttonWidth, buttonHeight);
-            Theme.drawMenu(g2, options, selected, w / 2, optionTop, unit);
+            Theme.drawPills(g2, options, selected, w / 2, optionTop, fontSize, buttonWidth, false);
         }
 
         String guide = afterGame

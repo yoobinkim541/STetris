@@ -16,17 +16,18 @@ import tetris.feature.versus.api.MatchSnapshot;
  * @param offer        CARD_PICK이면 제시된 카드, 아니면 null
  * @param events       직전 스냅샷 뒤 생긴 연출용 사건
  * @param result       FINISHED이면 결과, 아니면 null
+ * @param introMillis  BOSS_INTRO의 남은 시간. 다른 단계는 0
  */
 public record RaidSnapshot(String raidId, long revision, RaidMode mode, RaidPhase phase, BossView boss,
                            List<PlayerView> players, int kills, long elapsedMillis, int gauge,
                            CardOffer offer, List<RaidEvent> events, Result result,
-                           List<BossView> raceBosses, int[] raceKills, int[] raceGauges) {
-    /** 솔로·협동. 레이스 전용 필드는 비어 있다 */
+                           List<BossView> raceBosses, int[] raceKills, int[] raceGauges, long introMillis) {
+    /** 솔로·협동. 레이스 전용 필드는 비어 있고 보스 소개 중이 아니다 */
     public RaidSnapshot(String raidId, long revision, RaidMode mode, RaidPhase phase, BossView boss,
                         List<PlayerView> players, int kills, long elapsedMillis, int gauge,
                         CardOffer offer, List<RaidEvent> events, Result result) {
         this(raidId, revision, mode, phase, boss, players, kills, elapsedMillis, gauge, offer, events, result,
-                List.of(), new int[0], new int[0]);
+                List.of(), new int[0], new int[0], 0);
     }
 
     public RaidSnapshot {
@@ -42,6 +43,9 @@ public record RaidSnapshot(String raidId, long revision, RaidMode mode, RaidPhas
         }
         if ((phase == RaidPhase.FINISHED) != (result != null)) {
             throw new IllegalArgumentException("result must be present exactly when FINISHED");
+        }
+        if (introMillis < 0 || (introMillis > 0 && phase != RaidPhase.BOSS_INTRO)) {
+            throw new IllegalArgumentException("introMillis must be 0 outside BOSS_INTRO");
         }
         events = List.copyOf(events);
         raceBosses = raceBosses == null ? List.of() : List.copyOf(raceBosses);

@@ -271,7 +271,6 @@ public class GamePanel extends JPanel implements GameListener {
             Block current = snapshot.currentBlock();
             if (current != null) {
                 drawGhost(g, snapshot.ghostBlock(), x, y);
-                drawLandingBeam(g, current, snapshot.ghostBlock(), x, y);
                 int[][] shape = current.getShape();
                 for (int r = 0; r < shape.length; r++) {
                     for (int c = 0; c < shape[r].length; c++) {
@@ -657,37 +656,19 @@ public class GamePanel extends JPanel implements GameListener {
         }
     }
 
-    /** 착지 미리보기. 색맹 모드는 점선과 대각선, 그 외는 청록 점선 윤곽 (GST-2) */
+    /** 착지 미리보기: 떨어지는 블록과 같은 칸을 반투명으로 (GST-1, GST-2) */
     private void drawGhost(Graphics2D g, Block ghost, int originX, int originY) {
         if (ghost == null) return;
+        Color color = palette.color(ghost.getType(), colorBlindMode);
+        String letter = String.valueOf(ghost.getType().letter());
         int[][] shape = ghost.getShape();
         for (int r = 0; r < shape.length; r++) {
             for (int c = 0; c < shape[r].length; c++) {
                 int row = ghost.getRow() + r;
                 if (shape[r][c] == 0 || row < 0) continue;
                 tetris.ui.theme.BlockCells.paintGhost(g, originX + (ghost.getCol() + c) * cellSize,
-                        originY + row * cellSize, cellSize, colorBlindMode);
+                        originY + row * cellSize, cellSize, color, letter, palette.textColor(color), colorBlindMode);
             }
-        }
-    }
-
-    /** 떨어지는 조각 아래 빛기둥. 칸 가운데만 칠해 감사 픽셀을 피한다 */
-    private void drawLandingBeam(Graphics2D g, Block current, Block ghost, int originX, int originY) {
-        if (colorBlindMode || current == null || ghost == null) return;
-        int top = current.getRow();
-        int[][] shape = current.getShape();
-        int bottomRow = top;
-        for (int r = 0; r < shape.length; r++) {
-            for (int c = 0; c < shape[r].length; c++) if (shape[r][c] != 0) bottomRow = Math.max(bottomRow, top + r);
-        }
-        int ghostTop = ghost.getRow();
-        if (ghostTop <= bottomRow) return;
-        for (int c = 0; c < shape[0].length; c++) {
-            boolean used = false;
-            for (int r = 0; r < shape.length; r++) if (shape[r][c] != 0) used = true;
-            if (!used) continue;
-            tetris.ui.theme.BlockCells.paintBeam(g, originX + (current.getCol() + c) * cellSize,
-                    originY + (bottomRow + 1) * cellSize, originY + ghostTop * cellSize, cellSize);
         }
     }
 

@@ -5,6 +5,11 @@ import tetris.feature.raid.api.RaidMode;
 /** 보스 HP·카운트다운·시간 (§4). 표에 있는 1~4레벨은 표 값을 쓰고, 5레벨부터 ×1.3 */
 public final class RaidRules {
     public static final long COUNTDOWN_MILLIS = 3_000;
+    /** 보스 추첨 룰렛이 도는 시간 */
+    public static final long INTRO_SPIN_MILLIS = 3_000;
+    /** 뽑힌 보스의 능력 소개를 띄워 두는 시간. 하드 드롭으로 건너뛸 수 있다 */
+    public static final long INTRO_INFO_MILLIS = 10_000;
+    public static final long INTRO_MILLIS = INTRO_SPIN_MILLIS + INTRO_INFO_MILLIS;
     /** 보상 카드 고르는 시간. 5초는 솔로에서 카드 3장을 읽기에 짧아 10초로 늘렸다 */
     public static final long CARD_PICK_MILLIS = 10_000;
     public static final long SYNC_MILLIS = 2_000;

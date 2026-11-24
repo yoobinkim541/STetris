@@ -107,7 +107,9 @@ public final class PlayFx {
     }
 
     public void tick() {
-        if (shownScore < targetScore) {
+        // 아직 점수를 받기 전(MIN_VALUE)이면 움직이지 않는다. 타이머가 첫 상태보다 먼저 돌면
+        // target - MIN_VALUE가 넘쳐 표시가 음수 큰 값에서 1씩 올라갔다
+        if (shownScore != Long.MIN_VALUE && shownScore < targetScore) {
             long step = Math.max(1, (targetScore - shownScore) / 8);
             shownScore = Math.min(targetScore, shownScore + step);
         } else if (shownScore > targetScore) {

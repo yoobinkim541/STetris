@@ -31,6 +31,7 @@ import tetris.feature.network.match.MatchPulse;
 import tetris.feature.network.protocol.FrameEncoder;
 import tetris.feature.network.protocol.RaidPayloads;
 import tetris.feature.network.protocol.WireFormat;
+import tetris.feature.raid.RaidRules;
 import tetris.feature.raid.api.RaidMode;
 import tetris.feature.raid.api.RaidPhase;
 import tetris.feature.raid.api.RaidSnapshot;
@@ -102,7 +103,22 @@ class RaidP2pMatchTest {
         var hostRaid = raidQueue(hostExec, host);
         var clientRaid = raidQueue(clientExec, client);
         await(hs, snapshot -> snapshot.state() == State.PLAYING);
-        now.set(3_000);
+        now.set(RaidRules.INTRO_SPIN_MILLIS);
+        tick();
+        // 클라이언트의 하드 드롭이 호스트에서 보스 소개를 건너뛴다
+        run(clientExec, () -> client.raidClient().orElseThrow()
+                .send(new PlayerCommand(PlayerId.ONE, GameAction.HARD_DROP, true, 0)));
+        run(clientExec, () -> client.raidClient().orElseThrow()
+                .send(new PlayerCommand(PlayerId.ONE, GameAction.HARD_DROP, false, 0)));
+        long skipDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
+        while (call(hostExec, () -> ((HostRaidClient) host.raidClient().orElseThrow()).snapshot().phase())
+                == RaidPhase.BOSS_INTRO && System.nanoTime() < skipDeadline) {
+            now.addAndGet(16);
+            tick();
+        }
+        assertEquals(RaidPhase.COUNTDOWN,
+                call(hostExec, () -> ((HostRaidClient) host.raidClient().orElseThrow()).snapshot().phase()));
+        now.addAndGet(RaidRules.COUNTDOWN_MILLIS);
         tick();
         now.addAndGet(HostBattleClient.STATE_INTERVAL_MILLIS);
         tick();

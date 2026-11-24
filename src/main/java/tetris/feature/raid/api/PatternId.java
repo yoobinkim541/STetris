@@ -31,12 +31,21 @@ public enum PatternId {
         return displayName;
     }
 
-    /** 화면·엔진이 같이 쓰는 효과 설명. 봉인은 바로 다음 1개를 가리지 않는다 */
+    /** 화면이 보여 주는 효과 설명(Patterns·RaidEngine의 실제 수치). 봉인은 바로 다음 1개를 가리지 않는다 */
     public String description() {
         return switch (this) {
-            case SEAL_PREVIEW -> "바로 다음 1개는 보이고, 2·3번째와 홀드만 가린다";
+            case CLOUD -> "보드 4×3칸을 5조각 동안 구름으로 가린다";
+            case SUMMON_BLOCK -> "아래쪽 빈칸에 회색 덩어리 3~4칸을 박는다";
+            case ROCK_THROW -> "쓰레기 줄 2줄을 밀어 올린다 (Lv.4부터 3줄)";
+            case PILLAR -> "한 열에 회색 기둥 4칸을 세운다";
             case CURSE_BLOCKS -> "보여 준 다음 블록은 그대로 두고 그 뒤 2개를 S/Z로 바꾼다";
-            default -> displayName;
+            case SEAL_PREVIEW -> "4조각 동안 바로 다음 1개만 보이고, 2·3번째와 홀드를 가린다";
+            case OVERLOAD -> "5조각 동안 블록이 2배 빠르게 떨어진다";
+            case CHAIN -> "쓰레기 1줄. 협동은 둘 다 맞고, 8조각 안에 둘 다 줄을 지워야 풀린다";
+            case REVERSE -> "3조각 동안 좌우 이동이 반대로 바뀐다";
+            case SPLIT -> "HP가 절반이 되면 미니 젤리로 나뉜다. 협동은 각자 1마리씩 잡는다";
+            case EARTHQUAKE -> "구멍 1칸짜리 쓰레기 줄로 보드를 1줄 들어 올린다";
+            case FIRE_BREATH -> "쓰레기 줄 2줄 (Lv.4부터 3줄). 협동은 둘 다, 솔로는 2배";
         };
     }
 }

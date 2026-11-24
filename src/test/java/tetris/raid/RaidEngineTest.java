@@ -42,15 +42,24 @@ import tetris.feature.versus.api.VersusRules;
 @Timeout(60)
 class RaidEngineTest {
     @Test
-    void soloStartsInCountdownThenPlaysAtLevelOneHp() {
+    void soloShowsBossIntroThenCountdownThenPlaysAtLevelOneHp() {
         Harness harness = Harness.solo(1);
         RaidSnapshot start = harness.engine.snapshot();
-        assertEquals(RaidPhase.COUNTDOWN, start.phase());
+        assertEquals(RaidPhase.BOSS_INTRO, start.phase());
+        assertEquals(RaidRules.INTRO_MILLIS, start.introMillis());
         assertEquals(1, start.players().size());
         assertEquals(165, start.boss().maxHp());
         assertEquals(8, start.boss().piecesLeft());
         assertTrue(start.boss().id() != null);
         assertTrue(start.events().stream().anyMatch(event -> event.type() == RaidEvent.Type.BOSS_SPAWN));
+        harness.now = RaidRules.INTRO_MILLIS - 1;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.BOSS_INTRO, harness.engine.snapshot().phase());
+        assertEquals(1, harness.engine.snapshot().introMillis());
+        harness.now = RaidRules.INTRO_MILLIS;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.COUNTDOWN, harness.engine.snapshot().phase());
+        assertEquals(0, harness.engine.snapshot().introMillis());
         harness.ready();
         assertEquals(RaidPhase.PLAYING, harness.engine.snapshot().phase());
         assertEquals(165, harness.engine.snapshot().boss().hp());
@@ -201,6 +210,8 @@ class RaidEngineTest {
             int hp = offer.engine.snapshot().boss().hp();
             int gauge = offer.engine.snapshot().gauge();
             offer.engine.pickCard(PlayerId.ONE, index);
+            assertEquals(RaidPhase.BOSS_INTRO, offer.engine.snapshot().phase(), "다음 보스도 소개부터 한다");
+            offer.settle();
             assertCard(card, offer, hp, gauge);
         }
     }
@@ -216,6 +227,10 @@ class RaidEngineTest {
             if (harness.engine.snapshot().phase() == RaidPhase.CARD_PICK) {
                 harness.engine.pickCard(PlayerId.ONE, 0);
                 if (harness.engine.snapshot().phase() == RaidPhase.CARD_PICK) harness.engine.pickCard(PlayerId.ONE, 0);
+                continue;
+            }
+            if (harness.engine.snapshot().phase() != RaidPhase.PLAYING) {
+                harness.settle();
                 continue;
             }
             BossId id = harness.engine.snapshot().boss().id();
@@ -290,6 +305,58 @@ class RaidEngineTest {
         assertEquals(RaidPhase.FINISHED, harness.engine.snapshot().phase());
         assertNotNull(harness.engine.snapshot().result());
         assertEquals(0, harness.engine.snapshot().result().kills());
+    }
+
+    @Test
+    void hardDropSkipsTheIntroOnlyAfterTheRouletteStops() {
+        Harness harness = Harness.coop(41);
+        harness.drop(1);
+        assertEquals(RaidPhase.BOSS_INTRO, harness.engine.snapshot().phase(), "룰렛이 도는 동안에는 건너뛰지 않는다");
+        harness.now = RaidRules.INTRO_SPIN_MILLIS;
+        harness.engine.advance(harness.now);
+        harness.drop(1);
+        assertEquals(RaidPhase.COUNTDOWN, harness.engine.snapshot().phase());
+        harness.now += RaidRules.COUNTDOWN_MILLIS;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.PLAYING, harness.engine.snapshot().phase());
+    }
+
+    @Test
+    void pauseDuringIntroKeepsTheRemainingTime() {
+        Harness harness = Harness.solo(42);
+        harness.now = 4_000;
+        harness.engine.advance(harness.now);
+        harness.engine.submit(new PlayerCommand(PlayerId.ONE, GameAction.PAUSE, true, 0));
+        harness.now += 1;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.PAUSED, harness.engine.snapshot().phase());
+        harness.now += 60_000;
+        harness.engine.advance(harness.now);
+        harness.engine.submit(new PlayerCommand(PlayerId.ONE, GameAction.PAUSE, false, 1));
+        harness.engine.submit(new PlayerCommand(PlayerId.ONE, GameAction.PAUSE, true, 2));
+        harness.now += 1;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.BOSS_INTRO, harness.engine.snapshot().phase());
+        assertEquals(RaidRules.INTRO_MILLIS - 4_001, harness.engine.snapshot().introMillis());
+    }
+
+    @Test
+    void resumingDuringCountdownCountsFromThreeAgain() {
+        Harness harness = Harness.solo(43);
+        harness.now = RaidRules.INTRO_MILLIS + 2_000;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.COUNTDOWN, harness.engine.snapshot().phase());
+        harness.engine.submit(new PlayerCommand(PlayerId.ONE, GameAction.PAUSE, true, 0));
+        harness.engine.submit(new PlayerCommand(PlayerId.ONE, GameAction.PAUSE, false, 1));
+        harness.engine.submit(new PlayerCommand(PlayerId.ONE, GameAction.PAUSE, true, 2));
+        harness.now += 1;
+        harness.engine.advance(harness.now);
+        harness.now += RaidRules.COUNTDOWN_MILLIS - 1;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.COUNTDOWN, harness.engine.snapshot().phase(), "다시 시작하면 3초를 처음부터 센다");
+        harness.now += 1;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.PLAYING, harness.engine.snapshot().phase());
     }
 
     private static List<String> play(long seed) throws Exception {
@@ -482,7 +549,13 @@ class RaidEngineTest {
         }
 
         void ready() {
-            now = 3_000;
+            now = RaidRules.INTRO_MILLIS + RaidRules.COUNTDOWN_MILLIS;
+            engine.advance(now);
+        }
+
+        /** 다음 보스 소개와 카운트다운을 끝까지 흘린다 */
+        void settle() {
+            now += RaidRules.INTRO_MILLIS + RaidRules.COUNTDOWN_MILLIS;
             engine.advance(now);
         }
 
