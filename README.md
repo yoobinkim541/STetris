@@ -8,11 +8,11 @@ Java 21과 Swing으로 구현한 테트리스입니다. 일반 모드의 난이�
 
 ### 챌린지 빌드 (평가 외 추가 기능, 미리 보기)
 
-**[챌린지 JAR 다운로드](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.4/SE-Tetris.jar)** · [Windows 실행 파일(zip)](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.4/SE-Tetris-windows.zip) · [릴리스 보기](https://github.com/yoobinkim541/STetris/releases/tag/v0.6.0-challenge.4)
+**[챌린지 JAR 다운로드](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.5/SE-Tetris.jar)** · [Windows 실행 파일(zip)](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.5/SE-Tetris-windows.zip) · [릴리스 보기](https://github.com/yoobinkim541/STetris/releases/tag/v0.6.0-challenge.5)
 
 평가 빌드(v0.5.0)와 별도로 받는 미리 보기 빌드입니다. Java 21 이상에서 더블클릭하거나 `java -jar SE-Tetris.jar`로 실행합니다. zip은 Java 없이 압축을 풀고 EXE로 실행합니다.
 
-- 보스 레이드: 솔로, 2인 협동, 1v1 레이스. 보스 4종(+황금 보스)과 패턴, 카드 보상(협동은 두 사람이 각자 고름), 보스마다 추첨 룰렛과 능력 소개
+- 보스 레이드: 솔로, 2인 협동, 1v1 레이스. 보스 4종(+황금 보스)과 패턴, 카드 보상(협동은 두 사람이 각자 고름), 보스마다 추첨 룰렛과 능력 소개, 보스 4종을 모두 잡으면 엔딩 크레딧
 - 온라인 대전·레이드: 같은 LAN(IP)과 인터넷(방 코드, 중계 서버)
 - 모던 조작(고스트·홀드·반시계 회전·DAS/ARR·NEXT 3개, 설정에서 클래식으로 변경 가능), 효과음·배경음, 크리스털 밤하늘 테마
 

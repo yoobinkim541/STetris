@@ -79,7 +79,7 @@ class RaidPayloadsTest {
         engine.advance(tetris.feature.raid.RaidRules.INTRO_SPIN_MILLIS + 1);
         RaidSnapshot ready = RaidPayloads.readState(overWire(RaidPayloads.stateMessage(engine.snapshot())));
         assertEquals(RaidPhase.BOSS_INTRO, ready.phase(), "한 사람만 준비하면 소개가 이어진다");
-        assertTrue(ready.introReadyFor(1) && !ready.introReadyFor(0), "누가 준비했는지 상대 화면에도 보인다");
+        assertTrue(ready.readyFor(1) && !ready.readyFor(0), "누가 준비했는지 상대 화면에도 보인다");
         engine.close();
 
         RaidSnapshot picking = tetris.ui.raid.RaidSamples.phase(RaidMode.COOP, RaidPhase.CARD_PICK);

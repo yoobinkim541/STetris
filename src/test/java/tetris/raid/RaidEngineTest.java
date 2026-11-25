@@ -218,6 +218,69 @@ class RaidEngineTest {
     }
 
     @Test
+    void creditsRollOnceAfterAllFourBossesThenTheRaidGoesOn() throws Exception {
+        Harness harness = Harness.solo(13, (boss, level, previous, before, random) -> PatternId.SEAL_PREVIEW);
+        harness.ready();
+        Set<BossId> beaten = new HashSet<>();
+        int creditsSeen = 0;
+        int killsAfterCredits = 0;
+        for (int guard = 0; guard < 400 && killsAfterCredits < 2; guard++) {
+            RaidPhase phase = harness.engine.snapshot().phase();
+            if (phase == RaidPhase.CREDITS) {
+                creditsSeen++;
+                assertEquals(4, beaten.size(), "보스 4종을 다 잡았을 때만 엔딩: " + beaten);
+                harness.drop(0);
+                assertEquals(RaidPhase.CARD_PICK, harness.engine.snapshot().phase(), "크레딧 뒤에는 평소처럼 보상 카드");
+                continue;
+            }
+            if (phase == RaidPhase.CARD_PICK) {
+                harness.engine.pickCard(PlayerId.ONE, 0);
+                continue;
+            }
+            if (phase != RaidPhase.PLAYING) {
+                harness.settle();
+                continue;
+            }
+            harness.clearTwo(0);
+            RaidEvent defeated = harness.event(RaidEvent.Type.BOSS_DEFEATED);
+            if (defeated != null) {
+                BossId id = BossId.values()[defeated.value()];
+                if (creditsSeen > 0) killsAfterCredits++;
+                else if (id != BossId.GOLDEN_TETRO) beaten.add(id);
+                if (beaten.size() < 4) assertNotEquals(RaidPhase.CREDITS, harness.engine.snapshot().phase());
+            }
+        }
+        assertEquals(1, creditsSeen, "엔딩 크레딧은 한 판에 한 번");
+        assertEquals(2, killsAfterCredits, "크레딧 뒤에도 레이드는 이어진다");
+    }
+
+    @Test
+    void coopCreditsWaitForBothPlayers() throws Exception {
+        Harness harness = Harness.coop(13, (boss, level, previous, before, random) -> PatternId.SEAL_PREVIEW);
+        harness.ready();
+        for (int guard = 0; guard < 400 && harness.engine.snapshot().phase() != RaidPhase.CREDITS; guard++) {
+            RaidPhase phase = harness.engine.snapshot().phase();
+            if (phase == RaidPhase.CARD_PICK) {
+                harness.engine.pickCard(PlayerId.ONE, 0);
+                harness.engine.pickCard(PlayerId.TWO, 0);
+            } else if (phase != RaidPhase.PLAYING) {
+                harness.settle();
+            } else {
+                harness.clearTwo(0);
+            }
+        }
+        assertEquals(RaidPhase.CREDITS, harness.engine.snapshot().phase());
+        harness.now += 120_000;
+        harness.engine.advance(harness.now);
+        assertEquals(RaidPhase.CREDITS, harness.engine.snapshot().phase(), "크레딧은 시간으로 넘어가지 않는다");
+        harness.drop(0);
+        assertEquals(RaidPhase.CREDITS, harness.engine.snapshot().phase(), "한 사람만 계속을 누르면 기다린다");
+        assertTrue(harness.engine.snapshot().readyFor(0) && !harness.engine.snapshot().readyFor(1));
+        harness.drop(1);
+        assertEquals(RaidPhase.CARD_PICK, harness.engine.snapshot().phase());
+    }
+
+    @Test
     void bossOrderCoversAllFourBeforeRepeatAndLevelScalesHp() throws Exception {
         Harness harness = Harness.solo(13, (boss, level, previous, before, random) -> PatternId.SEAL_PREVIEW);
         harness.ready();
@@ -313,13 +376,13 @@ class RaidEngineTest {
         Harness harness = Harness.coop(41);
         harness.drop(1);
         assertEquals(RaidPhase.BOSS_INTRO, harness.engine.snapshot().phase(), "룰렛이 도는 동안에는 건너뛰지 않는다");
-        assertFalse(harness.engine.snapshot().introReadyFor(1), "룰렛 중 누른 것은 준비로 치지 않는다");
+        assertFalse(harness.engine.snapshot().readyFor(1), "룰렛 중 누른 것은 준비로 치지 않는다");
         harness.now = RaidRules.INTRO_SPIN_MILLIS;
         harness.engine.advance(harness.now);
         harness.drop(1);
         assertEquals(RaidPhase.BOSS_INTRO, harness.engine.snapshot().phase(), "한 사람만 눌러서는 상대가 읽는 소개가 끊기지 않는다");
-        assertTrue(harness.engine.snapshot().introReadyFor(1));
-        assertFalse(harness.engine.snapshot().introReadyFor(0));
+        assertTrue(harness.engine.snapshot().readyFor(1));
+        assertFalse(harness.engine.snapshot().readyFor(0));
         harness.drop(0);
         assertEquals(RaidPhase.COUNTDOWN, harness.engine.snapshot().phase());
         harness.now += RaidRules.COUNTDOWN_MILLIS;

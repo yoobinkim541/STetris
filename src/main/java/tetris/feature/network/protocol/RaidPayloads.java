@@ -94,11 +94,11 @@ public final class RaidPayloads {
             payload.set("raceKills", intsJson(snapshot.raceKills()));
             payload.set("raceGauges", intsJson(snapshot.raceGauges()));
         }
-        boolean[] ready = snapshot.introReady();
+        boolean[] ready = snapshot.ready();
         if (ready.length > 0) {
             int[] flags = new int[ready.length];
             for (int i = 0; i < ready.length; i++) flags[i] = ready[i] ? 1 : 0;
-            payload.set("introReady", intsJson(flags));
+            payload.set("ready", intsJson(flags));
         }
         return new Message(MessageType.RAID_STATE, snapshot.raidId(), 0, payload);
     }
@@ -159,12 +159,12 @@ public final class RaidPayloads {
         }
         int[] raceKills = payload.has("raceKills") ? intsField(payload, "raceKills") : new int[0];
         int[] raceGauges = payload.has("raceGauges") ? intsField(payload, "raceGauges") : new int[0];
-        int[] readyFlags = payload.has("introReady") ? intsField(payload, "introReady") : new int[0];
-        boolean[] introReady = new boolean[readyFlags.length];
-        for (int i = 0; i < readyFlags.length; i++) introReady[i] = readyFlags[i] != 0;
+        int[] readyFlags = payload.has("ready") ? intsField(payload, "ready") : new int[0];
+        boolean[] ready = new boolean[readyFlags.length];
+        for (int i = 0; i < readyFlags.length; i++) ready[i] = readyFlags[i] != 0;
         String id = raidId == null ? "raid" : raidId;
         return construct(() -> new RaidSnapshot(id, revision, mode, phase, boss, players, kills, elapsed, gauge,
-                offer, events, result, raceBosses, raceKills, raceGauges, intro, introReady));
+                offer, events, result, raceBosses, raceKills, raceGauges, intro, ready));
     }
 
     private static ObjectNode bossJson(RaidSnapshot.BossView boss) {

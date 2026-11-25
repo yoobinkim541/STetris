@@ -17,13 +17,14 @@ import tetris.feature.versus.api.MatchSnapshot;
  * @param events       직전 스냅샷 뒤 생긴 연출용 사건
  * @param result       FINISHED이면 결과, 아니면 null
  * @param introMillis  BOSS_INTRO의 남은 시간. 다른 단계는 0
- * @param introReady   BOSS_INTRO에서 참가자별로 건너뛰기를 눌렀는지. 모두 눌러야 소개가 일찍 끝난다. 다른 단계는 빈 배열
+ * @param ready        BOSS_INTRO·CREDITS에서 참가자별로 넘어가기(하드 드롭·Enter·클릭)를 눌렀는지. 모두 눌러야 넘어간다.
+ *                     다른 단계는 빈 배열
  */
 public record RaidSnapshot(String raidId, long revision, RaidMode mode, RaidPhase phase, BossView boss,
                            List<PlayerView> players, int kills, long elapsedMillis, int gauge,
                            CardOffer offer, List<RaidEvent> events, Result result,
                            List<BossView> raceBosses, int[] raceKills, int[] raceGauges, long introMillis,
-                           boolean[] introReady) {
+                           boolean[] ready) {
     /** 솔로·협동. 레이스 전용 필드는 비어 있고 보스 소개 중이 아니다 */
     public RaidSnapshot(String raidId, long revision, RaidMode mode, RaidPhase phase, BossView boss,
                         List<PlayerView> players, int kills, long elapsedMillis, int gauge,
@@ -32,7 +33,7 @@ public record RaidSnapshot(String raidId, long revision, RaidMode mode, RaidPhas
                 List.of(), new int[0], new int[0], 0, new boolean[0]);
     }
 
-    /** 아무도 소개 건너뛰기를 누르지 않은 상태 */
+    /** 아무도 넘어가기를 누르지 않은 상태 */
     public RaidSnapshot(String raidId, long revision, RaidMode mode, RaidPhase phase, BossView boss,
                         List<PlayerView> players, int kills, long elapsedMillis, int gauge,
                         CardOffer offer, List<RaidEvent> events, Result result,
@@ -74,20 +75,21 @@ public record RaidSnapshot(String raidId, long revision, RaidMode mode, RaidPhas
         for (int value : raceGauges) {
             if (value < 0 || value > 100) throw new IllegalArgumentException("race gauge must be 0..100");
         }
-        introReady = introReady == null ? new boolean[0] : introReady.clone();
-        if (introReady.length != 0 && (introReady.length != players.size() || phase != RaidPhase.BOSS_INTRO)) {
-            throw new IllegalArgumentException("intro ready must match players and only in BOSS_INTRO");
+        ready = ready == null ? new boolean[0] : ready.clone();
+        if (ready.length != 0 && (ready.length != players.size()
+                || (phase != RaidPhase.BOSS_INTRO && phase != RaidPhase.CREDITS))) {
+            throw new IllegalArgumentException("ready must match players and only in BOSS_INTRO or CREDITS");
         }
     }
 
-    /** 그 참가자가 소개 건너뛰기를 눌렀는지 */
-    public boolean introReadyFor(int player) {
-        return player >= 0 && player < introReady.length && introReady[player];
+    /** 그 참가자가 넘어가기를 눌렀는지 (보스 소개·엔딩 크레딧) */
+    public boolean readyFor(int player) {
+        return player >= 0 && player < ready.length && ready[player];
     }
 
     @Override
-    public boolean[] introReady() {
-        return introReady.clone();
+    public boolean[] ready() {
+        return ready.clone();
     }
 
     /** 레이스면 그 참가자의 보스, 아니면 공유 보스 */

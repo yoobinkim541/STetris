@@ -9,6 +9,8 @@ public enum RaidPhase {
     PLAYING,
     /** 보스 처치 연출 뒤 보상 카드 선택 (보드 정지) */
     CARD_PICK,
+    /** 보스 4종을 처음으로 모두 물리친 판에서 한 번, 보상 카드 앞에 엔딩 크레딧 (보드 정지). 모두 계속을 누르면 카드 선택 */
+    CREDITS,
     PAUSED,
     FINISHED
 }

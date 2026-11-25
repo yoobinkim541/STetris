@@ -105,8 +105,13 @@ public final class RaidEngine {
     private int pendingOffers;
     /** 참가자별로 고른 카드 번호. 아직 안 골랐으면 -1 */
     private int[] picks = new int[0];
-    /** 소개 중 참가자별로 건너뛰기를 눌렀는지. 모두 눌러야 소개가 일찍 끝난다 */
-    private boolean[] introReady = new boolean[0];
+    /** 보스 소개·엔딩 크레딧에서 참가자별로 넘어가기를 눌렀는지. 모두 눌러야 넘어간다 */
+    private boolean[] ready = new boolean[0];
+    /** 이번 판에 쓰러뜨린 일반 보스 종류. 4종이 처음 모이면 엔딩 크레딧을 한 번 띄운다 (황금 보스는 세지 않는다) */
+    private final EnumSet<BossId> defeatedKinds = EnumSet.noneOf(BossId.class);
+    private boolean creditsShown;
+    /** 일반 보스 수 (황금 테트로 제외). 이만큼 종류를 다 잡으면 엔딩 */
+    private static final int REGULAR_BOSSES = BossId.values().length - 1;
     private long offerLeft;
     private List<CardId> offer;
     private RaidSnapshot.Result result;
@@ -301,8 +306,16 @@ public final class RaidEngine {
                 // 룰렛이 도는 동안은 결과를 보여 주고, 능력 소개부터 하드 드롭으로 건너뛴다.
                 // 둘이면 두 사람이 모두 눌러야 건너뛴다 (한 사람이 읽는 중에 끊기지 않게)
                 if (action == GameAction.HARD_DROP && introLeft <= RaidRules.INTRO_INFO_MILLIS) {
-                    introReady[i] = true;
-                    if (allIntroReady()) endIntro(RaidRules.COUNTDOWN_MILLIS);
+                    ready[i] = true;
+                    if (allReady()) endIntro(RaidRules.COUNTDOWN_MILLIS);
+                }
+                continue;
+            }
+            if (phase == RaidPhase.CREDITS) {
+                // 엔딩 크레딧은 제한 시간 없이 모두 계속을 누르면 보상 카드로 넘어간다
+                if (action == GameAction.HARD_DROP) {
+                    ready[i] = true;
+                    if (allReady()) beginOffer();
                 }
                 continue;
             }
@@ -485,7 +498,23 @@ public final class RaidEngine {
         luckDoubled = false;
         fleeLeft = -1;
         pendingOffers = bossId == BossId.GOLDEN_TETRO ? 2 : 1;
-        beginOffer();
+        if (bossId != BossId.GOLDEN_TETRO) defeatedKinds.add(bossId);
+        if (!creditsShown && config.mode() != RaidMode.RACE && defeatedKinds.size() == REGULAR_BOSSES) beginCredits();
+        else beginOffer();
+    }
+
+    /** 보스 4종을 처음 모두 물리쳤다. 보드를 멈추고 엔딩 크레딧을 띄운다. 끝나면 평소처럼 보상 카드 */
+    private void beginCredits() {
+        creditsShown = true;
+        for (Fighter fighter : fighters) {
+            fighter.held.clear();
+            fighter.repeat.clear();
+        }
+        for (GameSession session : sessions) {
+            if (session.getState() == GameState.PLAYING || session.getState() == GameState.CLEARING) session.pause();
+        }
+        ready = new boolean[count];
+        phase = RaidPhase.CREDITS;
     }
 
     private void flee() {
@@ -723,12 +752,12 @@ public final class RaidEngine {
             if (session.getState() == GameState.PLAYING || session.getState() == GameState.CLEARING) session.pause();
         }
         introLeft = RaidRules.INTRO_MILLIS;
-        introReady = new boolean[count];
+        ready = new boolean[count];
         phase = RaidPhase.BOSS_INTRO;
     }
 
-    private boolean allIntroReady() {
-        for (boolean ready : introReady) if (!ready) return false;
+    private boolean allReady() {
+        for (boolean pressed : ready) if (!pressed) return false;
         return true;
     }
 
@@ -899,7 +928,7 @@ public final class RaidEngine {
         return new RaidSnapshot(raidId, revision, config.mode(), shown, boss, players, shownKills, elapsed,
                 shownGauge, cardOffer, List.copyOf(events), shown == RaidPhase.FINISHED ? result : null,
                 raceBosses, raceKills, raceGauges, shown == RaidPhase.BOSS_INTRO ? Math.max(0, introLeft) : 0,
-                shown == RaidPhase.BOSS_INTRO ? introReady : new boolean[0]);
+                shown == RaidPhase.BOSS_INTRO || shown == RaidPhase.CREDITS ? ready : new boolean[0]);
     }
 
     private RaidSnapshot.BossView bossView() {
