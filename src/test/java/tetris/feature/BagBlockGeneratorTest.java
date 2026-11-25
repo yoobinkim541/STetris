@@ -45,7 +45,7 @@ public class BagBlockGeneratorTest {
     }
 
     @Test
-    @DisplayName("NORMAL: 같은 블록은 최대 2번 연속, 같은 종류 사이 간격은 최대 12")
+    @DisplayName("2-18: NORMAL 같은 블록은 최대 2번 연속, 같은 종류 사이 간격은 최대 13")
     void NORMAL은_연속과_가뭄이_제한된다() {
         List<BlockType> types = draw(new BagBlockGenerator(Difficulty.NORMAL.weights(), new Random(7)), 7000);
         Map<BlockType, Integer> last = new EnumMap<>(BlockType.class);
@@ -74,14 +74,63 @@ public class BagBlockGeneratorTest {
     // 그래서 같은 종류 사이 간격은 묶음 3개(24) 이하, 연속은 묶음 경계를 넘어도 3개 이하다
     @DisplayName("EASY·HARD도 고르게: 같은 블록 3연속 이하, 같은 종류 사이 간격 24 이하")
     void EASY_HARD도_고르게_나온다() {
-        for (Difficulty difficulty : List.of(Difficulty.EASY, Difficulty.HARD)) for (long seed = 0; seed < 20; seed++) {
-            List<BlockType> types = draw(new BagBlockGenerator(difficulty.weights(), new Random(seed)), BIG_BAG * 20);
-            Map<BlockType, Integer> last = new EnumMap<>(BlockType.class);
-            for (int i = 0; i < types.size(); i++) {
-                if (i >= 3) assertTrue(types.subList(i - 3, i + 1).stream().distinct().count() > 1, difficulty + " run of 4 at " + i);
-                Integer previous = last.put(types.get(i), i);
-                if (previous != null) assertTrue(i - previous <= 24, difficulty + " gap " + (i - previous) + " at " + i);
+        for (Difficulty difficulty : List.of(Difficulty.EASY, Difficulty.HARD)) for (long seed = 0; seed < 20; seed++)
+            assertEven(draw(new BagBlockGenerator(difficulty.weights(), new Random(seed)), BIG_BAG * 20), difficulty + " seed " + seed);
+    }
+
+    @Test
+    // 종류마다 시작 위치를 따로 뽑으면 여러 종류의 남는 몫이 한 묶음에 몰릴 수 있다 (HARD 묶음 13개 → 간격 25, EASY I만 든 묶음 → 4연속).
+    // 생성 때 뽑는 값이 모두 0이어도 시작 위치는 서로 떨어져 있어야 한다
+    @DisplayName("생성 때 난수가 한쪽으로 쏠려도 같은 블록 3연속 이하, 간격 24 이하")
+    void 시작_위치가_겹쳐도_고르게_나온다() {
+        for (Difficulty difficulty : List.of(Difficulty.EASY, Difficulty.HARD)) for (long seed = 0; seed < 200; seed++)
+            assertEven(draw(new BagBlockGenerator(difficulty.weights(), new ZeroFirst(seed, 7)), BIG_BAG * 10), difficulty + " seed " + seed);
+    }
+
+    @Test
+    @DisplayName("2-18~2-21: 실제 게임 생성기의 10개 시드 × 10,000회 분포가 요구사항 확률과 ±2%p 이내")
+    void 실제_게임_생성기의_분포는_요구사항의_확률과_일치한다() {
+        for (Difficulty difficulty : Difficulty.values()) {
+            double expectedI = switch (difficulty) {
+                case EASY -> 1.2 / 7;
+                case NORMAL -> 1.0 / 7;
+                case HARD -> 0.8 / 7;
+            };
+            for (long seed = 0; seed < 10; seed++) {
+                Map<BlockType, Integer> observed = count(draw(new BagBlockGenerator(difficulty.weights(), new Random(seed)), 10_000));
+                for (BlockType type : BlockType.ordinary()) {
+                    double expected = type == BlockType.I ? expectedI : (1 - expectedI) / 6;
+                    assertEquals(expected, observed.getOrDefault(type, 0) / 10_000.0, 0.02, difficulty + " seed=" + seed + " type=" + type);
+                }
             }
+        }
+    }
+
+    private static void assertEven(List<BlockType> types, String label) {
+        Map<BlockType, Integer> last = new EnumMap<>(BlockType.class);
+        for (int i = 0; i < types.size(); i++) {
+            if (i >= 3) assertTrue(types.subList(i - 3, i + 1).stream().distinct().count() > 1, label + " run of 4 at " + i);
+            Integer previous = last.put(types.get(i), i);
+            if (previous != null) assertTrue(i - previous <= 24, label + " gap " + (i - previous) + " at " + i);
+        }
+    }
+
+    /** 처음 zeros번의 nextInt(bound)는 0을 돌려주고, 그 뒤는 시드 난수를 쓴다 */
+    private static final class ZeroFirst extends Random {
+        private int zeros;
+
+        ZeroFirst(long seed, int zeros) {
+            super(seed);
+            this.zeros = zeros;
+        }
+
+        @Override
+        public int nextInt(int bound) {
+            if (zeros > 0) {
+                zeros--;
+                return 0;
+            }
+            return super.nextInt(bound);
         }
     }
 
