@@ -6,8 +6,11 @@ import java.awt.Dimension;
 import java.awt.GraphicsEnvironment;
 import java.awt.Insets;
 import java.awt.Rectangle;
+import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.awt.KeyboardFocusManager;
+import java.awt.KeyEventDispatcher;
 import java.time.Instant;
 import java.util.EnumMap;
 import java.util.List;
@@ -21,7 +24,6 @@ import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import tetris.DevMode;
@@ -40,7 +42,7 @@ import tetris.feature.network.lobby.LobbyClient;
 import tetris.feature.network.lobby.LobbySnapshot;
 import tetris.feature.network.lobby.SocketLobbyClient;
 import tetris.feature.network.match.DispatcherPulse;
-import tetris.feature.rule.WeightedBlockGenerator;
+import tetris.feature.rule.BagBlockGenerator;
 import tetris.feature.save.DataDirectory;
 import tetris.feature.save.JsonRecentPeerRepository;
 import tetris.feature.save.RecentPeers;
@@ -52,6 +54,12 @@ import tetris.feature.setting.ScreenSize;
 import tetris.feature.setting.Settings;
 import tetris.feature.versus.LocalMatchEngine;
 import tetris.feature.versus.api.*;
+import tetris.feature.raid.LocalRaidClient;
+import tetris.feature.raid.api.RaidClient;
+import tetris.feature.raid.api.RaidConfig;
+import tetris.feature.raid.api.RaidMode;
+import tetris.ui.raid.RaidScreenController;
+import tetris.ui.fx.GameSounds;
 import tetris.ui.versus.*;
 
 /**
@@ -61,7 +69,7 @@ import tetris.ui.versus.*;
  */
 public class MainFrame extends JFrame {
     /** 앱 화면 흐름 (GameState와 별개) */
-    public enum Screen { MAIN_MENU, GAME, SETTINGS, SCOREBOARD, NAME_INPUT, GAME_OVER, BATTLE_MODES, BATTLE, BATTLE_RESULT, P2P_LOBBY, P2P_RESULT }
+    public enum Screen { MAIN_MENU, GAME, SETTINGS, SCOREBOARD, NAME_INPUT, GAME_OVER, BATTLE_MODES, BATTLE, BATTLE_RESULT, P2P_LOBBY, P2P_RESULT, SOLO_MENU, RAID }
 
     private static final int MIN_CELL_PIXELS = 12;
 
@@ -72,8 +80,15 @@ public class MainFrame extends JFrame {
 
     private final CardLayout cards = new CardLayout();
     private final JPanel root = new JPanel(cards);
+    private final tetris.ui.input.Stage stage = new tetris.ui.input.Stage(root);
+    private boolean appliedFullscreen;
+    private boolean changingChrome;
+    private long ignoreFocusLossUntil;
+    private final KeyEventDispatcher fullscreenKeys = this::onFullscreenKey;
     private final Map<Screen, JComponent> screens = new EnumMap<>(Screen.class);
     private final MainMenuPanel mainMenuPanel;
+    private final MainMenuPanel soloMenuPanel;
+    private final MainMenuPanel multiMenuPanel;
     private final GamePanel gamePanel;
     private final GameOverPanel gameOverPanel;
     private final NameInputPanel nameInputPanel;
@@ -81,7 +96,7 @@ public class MainFrame extends JFrame {
     private final SettingPanel settingPanel;
     private final KeyBindingManager keyBindings;
     private GameSession session;
-
+    private final tetris.ui.theme.ScreenFade screenFade = new tetris.ui.theme.ScreenFade();
     private Screen currentScreen;
     private ScreenSize appliedScreenSize;
     private GameSnapshot finalResult; // 방금 끝난 게임의 마지막 상태 (Name 입력·스코어보드 등록용)
@@ -99,6 +114,9 @@ public class MainFrame extends JFrame {
     /** 개발자 연결 상태 오버레이. 창 생성 시 한 번 만들고 화면에 따라 켜고 끈다 */
     private final NetDebugOverlay debugOverlay;
     private boolean battleOnline;
+    private final Function<RaidConfig, RaidClient> raidFactory;
+    private RaidScreenController raidController;
+    private long raidGeneration;
 
     public MainFrame(Settings settings, Scoreboard scoreboard,
                      SettingsRepository settingsRepository, ScoreboardRepository scoreboardRepository) {
@@ -139,28 +157,55 @@ public class MainFrame extends JFrame {
                      SettingsRepository settingsRepository, ScoreboardRepository scoreboardRepository,
                      Function<MatchConfig, BattleClient> battleFactory,
                      Supplier<LobbyClient> lobbyFactory) {
+        this(settings, scoreboard, settingsRepository, scoreboardRepository, battleFactory, lobbyFactory,
+                MainFrame::openRaid);
+    }
+
+    /**
+     * raidFactory: 레이드를 시작할 때마다 클라이언트를 만든다.
+     * 기본값 {@link #openRaid}는 로컬 레이드 클라이언트를 만든다.
+     * 레이드 결과는 스코어보드에 쓰지 않는다.
+     */
+    public MainFrame(Settings settings, Scoreboard scoreboard,
+                     SettingsRepository settingsRepository, ScoreboardRepository scoreboardRepository,
+                     Function<MatchConfig, BattleClient> battleFactory,
+                     Supplier<LobbyClient> lobbyFactory,
+                     Function<RaidConfig, RaidClient> raidFactory) {
         super(Messages.get("app.title"));
         this.battleFactory = Objects.requireNonNull(battleFactory);
         this.lobbyFactory = Objects.requireNonNull(lobbyFactory);
+        this.raidFactory = Objects.requireNonNull(raidFactory);
         this.settings = settings;
         this.scoreboard = scoreboard;
         this.settingsRepository = settingsRepository;
         this.scoreboardRepository = scoreboardRepository;
 
-        mainMenuPanel = new MainMenuPanel(List.of(
-                new MenuItem(Messages.get("menu.start"), this::startGame),
-                new MenuItem("아이템 모드", () -> startGame(GameMode.ITEM)),
-                new MenuItem(Messages.get("menu.settings"), this::openSettings),
-                new MenuItem(Messages.get("menu.scoreboard"), this::openScoreboard),
-                new MenuItem(Messages.get("menu.exit"), this::exitApplication),
-                new MenuItem("대전", this::openBattleModes)));
+        tetris.ui.fx.StarfieldBackground.setEffectsHigh(settings.isEffectsHigh());
+        GameSounds.SHARED.apply(settings);
+        Runnable mainMenu = () -> showScreen(Screen.MAIN_MENU);
+        mainMenuPanel = new MainMenuPanel(mainMenuItems(
+                this::showSoloMenu,
+                () -> startGame(GameMode.ITEM),
+                this::openBattleModes,
+                this::openSettings,
+                this::openScoreboard,
+                this::exitApplication), null, null, settings::isColorBlindMode);
+        soloMenuPanel = new MainMenuPanel(soloMenuItems(this::startGame, this::startSoloRaid, mainMenu),
+                mainMenu, "솔로 플레이", settings::isColorBlindMode);
+        multiMenuPanel = new MainMenuPanel(multiMenuItems(
+                () -> startBattle(BattleMode.CLASSIC),
+                () -> startBattle(BattleMode.ITEM),
+                () -> startBattle(BattleMode.TIMED),
+                this::openP2pLobby,
+                this::startCoopRaid,
+                this::startRaceRaid,
+                mainMenu), mainMenu, "멀티플레이", settings::isColorBlindMode);
         PausePanel pausePanel = new PausePanel(this::resumeGame, this::confirmRestart, this::requestQuit);
         gamePanel = new GamePanel(settings, pausePanel, this::onGameOver);
         gameOverPanel = new GameOverPanel(this::afterGameOver);
         nameInputPanel = new NameInputPanel(this::submitName);
-        scoreBoardPanel = new ScoreBoardPanel(() -> showScreen(Screen.MAIN_MENU), this::exitApplication);
-        settingPanel = new SettingPanel(settings, this::onSettingsChanged, this::resetScoreboard,
-                () -> showScreen(Screen.MAIN_MENU));
+        scoreBoardPanel = new ScoreBoardPanel(mainMenu, this::exitApplication);
+        settingPanel = new SettingPanel(settings, this::onSettingsChanged, this::resetScoreboard, mainMenu);
 
         session = createSession(GameMode.CLASSIC);
         keyBindings = new KeyBindingManager(this::requestQuit);
@@ -172,36 +217,38 @@ public class MainFrame extends JFrame {
         addScreen(Screen.NAME_INPUT, nameInputPanel);
         addScreen(Screen.SCOREBOARD, scoreBoardPanel);
         addScreen(Screen.SETTINGS, settingPanel);
-        var modes = new MainMenuPanel(List.of(
-                new MenuItem("로컬 " + BattleModes.label(BattleMode.CLASSIC), () -> startBattle(BattleMode.CLASSIC)),
-                new MenuItem("로컬 " + BattleModes.label(BattleMode.ITEM), () -> startBattle(BattleMode.ITEM)),
-                new MenuItem("로컬 " + BattleModes.label(BattleMode.TIMED), () -> startBattle(BattleMode.TIMED)),
-                new MenuItem("P2P 대전 (같은 LAN)", this::openP2pLobby),
-                new MenuItem("메인 메뉴", () -> showScreen(Screen.MAIN_MENU))));
-        addScreen(Screen.BATTLE_MODES, modes);
-        battleResultPanel = new BattleResultPanel(this::openBattleModes, () -> showScreen(Screen.MAIN_MENU));
+        addScreen(Screen.BATTLE_MODES, multiMenuPanel);
+        battleResultPanel = new BattleResultPanel(this::openBattleModes, mainMenu);
         addScreen(Screen.BATTLE_RESULT, battleResultPanel);
-        onlineResultPanel = new BattleResultPanel("로비로", this::backToP2pLobby, "다시 대전", this::rematchP2p,
-                () -> showScreen(Screen.MAIN_MENU));
+        onlineResultPanel = new BattleResultPanel("로비로", this::backToP2pLobby, "다시 대전", this::rematchP2p, mainMenu);
         addScreen(Screen.P2P_RESULT, onlineResultPanel);
         addScreen(Screen.P2P_LOBBY, new JPanel());
+        addScreen(Screen.SOLO_MENU, soloMenuPanel);
+        addScreen(Screen.RAID, new JPanel());
         // 개발자 연결 상태 오버레이: 화면·연결은 늦게 생기므로 공급자로 넘긴다.
         // 대전 화면은 온라인 대전 중일 때만 넘긴다 (로컬 대전·싱글은 대상이 아니다)
         debugOverlay = new NetDebugOverlay(DevMode::enabled,
                 () -> p2pLobby, () -> devRtt,
                 () -> battleOnline && screens.get(Screen.BATTLE) instanceof BattlePanel battle ? battle : null);
-        setContentPane(root);
+        setContentPane(stage);
 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE); // EXT-1: 확인 없이 종료, 진행 중 게임은 폐기
         setResizable(false);
         addWindowListener(new WindowAdapter() {
             @Override
+            public void windowOpened(WindowEvent e) {
+                if (settings.isFullscreen()) setBounds(monitorBounds());
+                restoreFocus();
+            }
+            @Override
             public void windowDeactivated(WindowEvent e) {
                 onFocusLost();
             }
-            @Override public void windowClosing(WindowEvent e) { closeBattle(); closeP2p(); }
+            @Override public void windowClosing(WindowEvent e) { closeBattle(); closeP2p(); closeRaid(); }
         });
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(fullscreenKeys);
         applyScreenSize(settings.getScreenSize());
+        setGlassPane(screenFade);
         updateTitle();
     }
 
@@ -214,24 +261,198 @@ public class MainFrame extends JFrame {
     /** 화면 전환. 기존 ReturnToMain 역할 = showScreen(MAIN_MENU) */
     public void showScreen(Screen screen) {
         if (currentScreen == Screen.BATTLE && screen != Screen.BATTLE) closeBattle();
+        if (currentScreen == Screen.RAID && screen != Screen.RAID) closeRaid();
         // P2P 화면 묶음(로비·온라인 경기·온라인 결과)을 떠나면 연결을 닫는다
         if (p2p != null && screen != Screen.P2P_LOBBY && screen != Screen.P2P_RESULT
-                && !(screen == Screen.BATTLE && battleOnline)) closeP2p();
+                && !(screen == Screen.BATTLE && battleOnline)
+                && !(screen == Screen.RAID && battleOnline)) closeP2p();
         currentScreen = screen;
         cards.show(root, screen.name());
+        stage.setBackdrop(backdropFor(screen));
+        stage.setPauseAction(playing(screen) ? this::pauseFromCorner : null);
+        tetris.ui.fx.AssetStore.SHARED.enterScreen(cacheGroup(screen));
+        screenFade.play();
+        syncMusic(screen);
         if (screen == Screen.NAME_INPUT) nameInputPanel.focusField();
         else screens.get(screen).requestFocusInWindow();
     }
 
+    /** 메뉴는 bgm_menu, 레이드·대전은 bgm_raid. 싱글은 조작음이 잦아 배경음을 멈춘다 */
+    private void syncMusic(Screen screen) {
+        switch (screen) {
+            case RAID -> GameSounds.SHARED.enterRaid();
+            case BATTLE -> GameSounds.SHARED.enterBattle();
+            case GAME -> GameSounds.SHARED.enterGame();
+            default -> GameSounds.SHARED.enterMenu();
+        }
+    }
+
     /** 셀 크기 적용: pack() 후 중앙 배치. 화면에 안 맞으면 셀 크기를 자동 축소 (RND-3) */
     public void applyScreenSize(ScreenSize size) {
+        if (size == null) return;
         appliedScreenSize = size;
-        int cell = fitCellSize(size.cellPixels());
+        if (settings.isFullscreen()) {
+            enterFullscreen();
+            return;
+        }
+        leaveFullscreen();
+        applyLogicalCell(fitCellSize(size.cellPixels()));
+        pack();
+        centerOnMonitor();
+        restoreFocus();
+    }
+
+    /** 지금 창이 있는 모니터 가운데. 전체 화면을 끈 뒤 주 모니터로 튀지 않게 한다 */
+    private void centerOnMonitor() {
+        Rectangle area = usableBounds();
+        setLocation(area.x + Math.max(0, (area.width - getWidth()) / 2),
+                area.y + Math.max(0, (area.height - getHeight()) / 2));
+    }
+
+    /** F11·Alt+Enter. Esc는 그대로 둔다 */
+    public void toggleFullscreen() {
+        boolean wasPlaying = currentScreen == Screen.GAME && (session.getState() == GameState.PLAYING
+                || session.getState() == GameState.CLEARING);
+        settings.setFullscreen(!settings.isFullscreen());
+        onSettingsChanged();
+        if (wasPlaying) SwingUtilities.invokeLater(() -> {
+            if (session.getState() == GameState.PAUSED) session.resume();
+        });
+    }
+
+    public boolean isFullscreen() {
+        return appliedFullscreen;
+    }
+
+    private void enterFullscreen() {
+        applyLogicalCell(settings.getScreenSize().cellPixels());
+        setBorderless(true, monitorBounds());
+        appliedFullscreen = true;
+        stage.setMinimizeAction(() -> setExtendedState(ICONIFIED));
+        restoreFocus();
+    }
+
+    private void leaveFullscreen() {
+        stage.setMinimizeAction(null);
+        if (!appliedFullscreen && !isUndecorated()) return;
+        setBorderless(false, null);
+        appliedFullscreen = false;
+    }
+
+    private void applyLogicalCell(int cell) {
         gamePanel.setCellSize(cell);
         Dimension panelSize = GamePanel.preferredSizeFor(cell);
         for (JComponent screen : screens.values()) screen.setPreferredSize(panelSize);
-        pack();
-        setLocationRelativeTo(null);
+        stage.setLogicalSize(panelSize.width, panelSize.height);
+    }
+
+    private void setBorderless(boolean borderless, Rectangle bounds) {
+        boolean show = isVisible();
+        // 창을 다시 만들 때만(테두리 전환) dispose가 비활성 이벤트를 늦게 보낸다. 그때만 자동 일시정지를 건너뛴다
+        boolean recreate = isDisplayable() && isUndecorated() != borderless;
+        if (recreate) {
+            changingChrome = true;
+            ignoreFocusLossUntil = System.nanoTime() + 800_000_000L;
+        }
+        Rectangle target = bounds == null ? null : new Rectangle(bounds);
+        try {
+            if (recreate) super.dispose();
+            if (isDisplayable() && isUndecorated() != borderless) {
+                setVisible(false);
+                super.dispose();
+            }
+            if (!isDisplayable()) setUndecorated(borderless);
+            setExtendedState(NORMAL);
+            setResizable(true);
+            if (target != null) setBounds(target);
+            if (show && !isVisible()) {
+                setVisible(true);
+                toFront(); // 다시 만든 창이 다른 창 뒤로 가지 않게
+            }
+            if (target != null && isDisplayable()) setBounds(target);
+            setResizable(false);
+            if (target != null && isDisplayable()) setBounds(target);
+        } catch (RuntimeException failure) {
+            tetris.feature.save.ErrorLog.shared().report("fullscreen", failure);
+            if (show && !isVisible()) {
+                try {
+                    setVisible(true);
+                } catch (RuntimeException ignored) {
+                    failure.addSuppressed(ignored);
+                }
+            }
+        } finally {
+            if (recreate) {
+                changingChrome = false;
+                ignoreFocusLossUntil = System.nanoTime() + 800_000_000L;
+            }
+        }
+    }
+
+    private Rectangle monitorBounds() {
+        return new Rectangle(monitor().getBounds());
+    }
+
+    /** 지금 모니터에서 작업 표시줄을 뺀 영역 */
+    private Rectangle usableBounds() {
+        java.awt.GraphicsConfiguration gc = monitor();
+        Rectangle bounds = gc.getBounds();
+        Insets insets = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(gc);
+        return new Rectangle(bounds.x + insets.left, bounds.y + insets.top,
+                bounds.width - insets.left - insets.right, bounds.height - insets.top - insets.bottom);
+    }
+
+    private java.awt.GraphicsConfiguration monitor() {
+        java.awt.GraphicsConfiguration gc = getGraphicsConfiguration();
+        if (gc == null) {
+            gc = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration();
+        }
+        return gc;
+    }
+
+    private boolean onFullscreenKey(KeyEvent event) {
+        if (!tetris.ui.input.FullscreenKeys.isToggle(event)) return false;
+        javax.swing.SwingUtilities.invokeLater(this::toggleFullscreen);
+        return true;
+    }
+
+    /** 화면 구석 일시정지 아이콘. 키를 흉내 내지 않고 화면별 일시정지로 바로 보낸다 (일시정지 키를 바꿔도 동작) */
+    private void pauseFromCorner() {
+        switch (currentScreen) {
+            case GAME -> session.togglePause();
+            case RAID -> { if (raidController != null) raidController.togglePause(); }
+            case BATTLE -> { if (battleController != null) battleController.togglePause(); }
+            default -> { }
+        }
+    }
+
+    private void restoreFocus() {
+        if (currentScreen == null) return;
+        JComponent screen = screens.get(currentScreen);
+        if (currentScreen == Screen.NAME_INPUT) nameInputPanel.focusField();
+        else if (screen != null) screen.requestFocusInWindow();
+    }
+
+    private static boolean playing(Screen screen) {
+        return screen == Screen.GAME || screen == Screen.BATTLE || screen == Screen.RAID;
+    }
+
+    private static String backdropFor(Screen screen) {
+        return switch (screen) {
+            case BATTLE, BATTLE_RESULT -> tetris.ui.fx.AssetStore.BG_VERSUS;
+            case RAID -> tetris.ui.input.Stage.WIDE_RAID;
+            case GAME -> null;
+            default -> tetris.ui.fx.AssetStore.BG_MENU;
+        };
+    }
+
+    private static String cacheGroup(Screen screen) {
+        return switch (screen) {
+            case GAME -> "game";
+            case BATTLE, BATTLE_RESULT -> "battle";
+            case RAID -> "raid";
+            default -> "menu";
+        };
     }
 
     /** 프로그램 종료 (Main Menu '게임 종료', 창 닫기) */
@@ -248,6 +469,16 @@ public class MainFrame extends JFrame {
         mainMenuPanel.showWarnings(warnings);
     }
 
+    /** EDT 예외 안내. 게임을 멈추지 않고 한 줄만 띄운다 */
+    public void reportFailure(Throwable error) {
+        if (error == null) return;
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> reportFailure(error));
+            return;
+        }
+        stage.setNotice("오류가 기록되었습니다. 게임은 계속됩니다.");
+    }
+
     // ── 화면 흐름 ────────────────────────────
     private void addScreen(Screen screen, JComponent panel) {
         screens.put(screen, panel);
@@ -259,24 +490,30 @@ public class MainFrame extends JFrame {
     }
 
     private GameSession createSession(GameMode mode) {
-        return newSession(mode, settings.getDifficulty(), new Random(), new SwingGameClock(this::onTick), gamePanel);
+        return newSession(mode, settings.getDifficulty(), settings.getControlStyle(), new Random(), new SwingGameClock(this::onTick), GameSounds.SHARED.listening(gamePanel));
     }
 
     /**
-     * 한 판을 진행할 세션을 만든다. 블록은 난이도 가중치를 쓰는 WeightedBlockGenerator로 만들어,
+     * 한 판을 진행할 세션을 만든다. 블록은 난이도 가중치를 bag 단위로 지키는 BagBlockGenerator로 만들어,
      * 분포 테스트를 통과한 생성기가 실제 게임에서도 그대로 쓰이게 한다.
      * 아이템 모드는 항상 NORMAL 규칙이라 가중치도 NORMAL로 맞춘다.
+     * 조작 방식은 시작할 때의 설정을 따른다 (CTL-1).
      */
     static GameSession newSession(GameMode mode, Difficulty difficulty, Random random, GameClock clock, GameListener listener) {
+        return newSession(mode, difficulty, tetris.feature.setting.ControlStyle.MODERN, random, clock, listener);
+    }
+
+    static GameSession newSession(GameMode mode, Difficulty difficulty, tetris.feature.setting.ControlStyle style,
+                                  Random random, GameClock clock, GameListener listener) {
         Difficulty effective = mode == GameMode.ITEM ? Difficulty.NORMAL : difficulty;
-        return new GameSession(mode, effective, new WeightedBlockGenerator(effective.weights(), random), clock, listener);
+        return new GameSession(mode, effective, new BagBlockGenerator(effective.weights(), random), clock, listener, style);
     }
 
     private void startGame(GameMode mode) {
         closeBattle();
         session.end();
         session = createSession(mode);
-        keyBindings.bindGameKeys(gamePanel, settings.getKeyMap(), session);
+        keyBindings.bindGameKeys(gamePanel, settings.getKeyMap(), session, settings.getControlStyle());
         keyBindings.setSuspended(false);
         keyBindings.clearPressedKeys();
         showScreen(Screen.GAME);
@@ -369,8 +606,10 @@ public class MainFrame extends JFrame {
 
     /** 창 포커스 이탈: 게임 중이면 자동 Pause, 눌림 상태 초기화 (PAU-3, KEY-8) */
     private void onFocusLost() {
+        if (changingChrome || System.nanoTime() < ignoreFocusLossUntil) return;
         keyBindings.clearPressedKeys();
         if (currentScreen == Screen.BATTLE && battleController != null) battleController.focusLost();
+        if (currentScreen == Screen.RAID && raidController != null) raidController.focusLost();
         if (currentScreen == Screen.GAME) session.onFocusLost();
     }
 
@@ -379,6 +618,7 @@ public class MainFrame extends JFrame {
         keyBindings.setSuspended(true);
         keyBindings.clearPressedKeys();
         closeBattle();
+        multiMenuPanel.resetSelection();
         showScreen(Screen.BATTLE_MODES);
     }
 
@@ -390,7 +630,7 @@ public class MainFrame extends JFrame {
         BattlePanel panel = prepareBattleScreen(keys, label, mode, null);
         long generation = battleGeneration;
         battleController = new BattleScreenController(getRootPane(),
-                battleFactory.apply(BattleModes.localConfig(mode, settings.getDifficulty())), keys, panel,
+                battleFactory.apply(BattleModes.localConfig(mode, settings.getDifficulty(), settings.getControlStyle())), keys, panel,
                 snapshot -> SwingUtilities.invokeLater(() -> {
                     if (currentScreen != Screen.BATTLE || generation != battleGeneration) return;
                     battleResultPanel.setSnapshot(snapshot, label);
@@ -398,6 +638,7 @@ public class MainFrame extends JFrame {
                 }),
                 this::confirmBattleForfeit,
                 this::openBattleModes);
+        panel.setPauseActions(battleController::togglePause, battleController::quit);
     }
 
     /** viewer: P2P에서 이 PC가 조작하는 참가자. 로컬 대전이면 null */
@@ -433,8 +674,13 @@ public class MainFrame extends JFrame {
                 @Override public void startMatch(BattleClient client, MatchConfig config, LobbySnapshot.Role role) {
                     startOnlineBattle(client, config, role);
                 }
+                @Override public void startRaid(tetris.feature.raid.api.RaidClient client, MatchConfig config,
+                                                LobbySnapshot.Role role) {
+                    startOnlineRaid(client, config, role);
+                }
                 @Override public void connectionLost() {
-                    if (currentScreen == Screen.BATTLE || currentScreen == Screen.P2P_RESULT) {
+                    if (currentScreen == Screen.BATTLE || currentScreen == Screen.P2P_RESULT
+                            || currentScreen == Screen.RAID) {
                         showScreen(Screen.P2P_LOBBY);
                         if (p2p != null) p2p.panel().focusTarget().requestFocusInWindow();
                     }
@@ -443,6 +689,9 @@ public class MainFrame extends JFrame {
                 @Override public void healthChanged(LinkHealth health) {
                     if (battleOnline && screens.get(Screen.BATTLE) instanceof BattlePanel battle) {
                         battle.setConnectionNotice(P2pLobbyController.lagText(health));
+                    }
+                    if (battleOnline && screens.get(Screen.RAID) instanceof tetris.ui.raid.RaidPanel raid) {
+                        raid.setConnectionNotice(P2pLobbyController.lagText(health));
                     }
                 }
             }, port, LanAddresses::current, recent);
@@ -462,6 +711,7 @@ public class MainFrame extends JFrame {
             addScreen(Screen.P2P_LOBBY, screen);
         }
         showScreen(Screen.P2P_LOBBY);
+        if (p2p != null) p2p.useControlStyle(settings.getControlStyle());
         debugOverlay.refresh(); // 개발자 모드면 로비 줄 표시를 시작한다
     }
 
@@ -479,6 +729,8 @@ public class MainFrame extends JFrame {
                     onlineResultPanel.setSnapshot(snapshot, label, viewer);
                     showScreen(Screen.P2P_RESULT);
                 }));
+        battleController.setSoundFocus(viewer);
+        panel.setPauseActions(battleController::togglePause, battleController::quit);
         debugOverlay.refresh(); // 이제 대전 화면도 같은 줄을 받는다
     }
 
@@ -516,10 +768,7 @@ public class MainFrame extends JFrame {
     }
 
     private PlayerId confirmBattleForfeit() {
-        int choice = JOptionPane.showOptionDialog(this, "기권할 플레이어를 선택하세요.", "대전 기권",
-                JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null,
-                new Object[]{"P1 기권", "P2 기권", "취소"}, "취소");
-        return switch (choice) { case 0 -> PlayerId.ONE; case 1 -> PlayerId.TWO; default -> null; };
+        return ForfeitChooser.choose(this);
     }
 
     private void closeBattle() {
@@ -527,15 +776,25 @@ public class MainFrame extends JFrame {
         if (battleController != null) { battleController.close(); battleController = null; }
     }
 
-    @Override public void dispose() { closeBattle(); closeP2p(); super.dispose(); }
+    @Override public void dispose() {
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(fullscreenKeys);
+        closeBattle();
+        closeP2p();
+        closeRaid();
+        super.dispose();
+    }
 
     // ── 설정·저장 ────────────────────────────
     private boolean onSettingsChanged() {
         // 설정의 개발자 토글을 개발자 모드 스위치에 반영한다 (dev-net-overlay). --dev로 켠 상태는 그대로 유지된다
         DevMode.setSettingEnabled(settings.isDevNetworkOverlay());
+        tetris.ui.fx.StarfieldBackground.setEffectsHigh(settings.isEffectsHigh());
+        GameSounds.SHARED.apply(settings);
         updateTitle();
         debugOverlay.refresh(); // 설정에서 끄면 열려 있는 화면의 줄이 바로 사라지고 타이머가 멈춘다
-        if (settings.getScreenSize() != appliedScreenSize) applyScreenSize(settings.getScreenSize());
+        if (settings.getScreenSize() != appliedScreenSize || settings.isFullscreen() != appliedFullscreen) {
+            applyScreenSize(settings.getScreenSize());
+        }
         gamePanel.applySettings(settings);
         keyBindings.rebind(settings.getKeyMap());
         return saveSettings();
@@ -565,9 +824,10 @@ public class MainFrame extends JFrame {
 
     // 사용 가능한 화면(작업 표시줄 제외)에 맞춘 실제 셀 크기. 설정값은 바꾸지 않는다 (RND-3)
     private int fitCellSize(int desired) {
+        if (settings.isFullscreen()) return desired;
         if (!isDisplayable()) pack(); // 창 테두리 크기(insets)는 pack 이후에 알 수 있다
         Insets insets = getInsets();
-        Rectangle available = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        Rectangle available = usableBounds();
         int largestFit = largestFittingCell(available.width - insets.left - insets.right,
                 available.height - insets.top - insets.bottom);
         return scaledCellSize(desired, largestFit);
@@ -592,5 +852,124 @@ public class MainFrame extends JFrame {
         int largest = ScreenSize.LARGE.cellPixels();
         if (largestFit >= largest) return desired;
         return Math.max(MIN_CELL_PIXELS, desired * largestFit / largest);
+    }
+
+    /** 시작 메뉴 6개. 솔로·멀티는 하위 메뉴로 들어간다 */
+    static List<MenuItem> mainMenuItems(Runnable solo, Runnable itemMode, Runnable multi, Runnable settings,
+                                        Runnable scores, Runnable exit) {
+        return List.of(
+                new MenuItem(Messages.get("menu.start"), solo),
+                new MenuItem(Messages.get("menu.item"), itemMode),
+                new MenuItem(Messages.get("menu.multi"), multi),
+                new MenuItem(Messages.get("menu.settings"), settings),
+                new MenuItem(Messages.get("menu.scoreboard"), scores),
+                new MenuItem(Messages.get("menu.exit"), exit));
+    }
+
+    static List<MenuItem> soloMenuItems(Runnable classic, Runnable raid, Runnable mainMenu) {
+        return List.of(
+                new MenuItem(Messages.get("menu.solo.classic"), classic),
+                new MenuItem(Messages.get("menu.raid.solo"), raid),
+                new MenuItem(Messages.get("menu.back"), mainMenu));
+    }
+
+    static List<MenuItem> multiMenuItems(Runnable classic, Runnable item, Runnable timed, Runnable online,
+                                         Runnable coop, Runnable race, Runnable mainMenu) {
+        return List.of(
+                new MenuItem(Messages.get("menu.multi.classic"), classic),
+                new MenuItem(Messages.get("menu.multi.item"), item),
+                new MenuItem(Messages.get("menu.multi.timed"), timed),
+                new MenuItem(Messages.get("menu.multi.online"), online),
+                new MenuItem(Messages.get("menu.raid.coop"), coop),
+                new MenuItem(Messages.get("menu.raid.race"), race),
+                new MenuItem(Messages.get("menu.back"), mainMenu));
+    }
+
+    /** 시드는 시작할 때 한 번 정한다. 테스트는 이 메서드로 시드를 고정한다 */
+    static RaidConfig raidConfig(RaidMode mode, tetris.feature.setting.ControlStyle style, long seed) {
+        return new RaidConfig(mode, seed, style);
+    }
+
+    /**
+     * 기본 레이드 팩토리. 로컬 레이드 클라이언트를 만든다.
+     * EDT에서 호출한다. 만들기에 실패하면 예외가 그대로 올라온다.
+     * 레이드 결과는 스코어보드에 쓰지 않는다.
+     */
+    public static RaidClient openRaid(RaidConfig config) {
+        return new LocalRaidClient(config);
+    }
+
+    private void showSoloMenu() {
+        session.end();
+        keyBindings.setSuspended(true);
+        keyBindings.clearPressedKeys();
+        closeBattle();
+        soloMenuPanel.resetSelection();
+        showScreen(Screen.SOLO_MENU);
+    }
+
+    private void startSoloRaid() {
+        startRaid(RaidMode.SOLO);
+    }
+
+    private void startCoopRaid() {
+        startRaid(RaidMode.COOP);
+    }
+
+    private void startRaceRaid() {
+        startRaid(RaidMode.RACE);
+    }
+
+    private void startRaid(RaidMode mode) {
+        session.end();
+        keyBindings.setSuspended(true);
+        keyBindings.clearPressedKeys();
+        closeBattle();
+        RaidConfig config = raidConfig(mode, settings.getControlStyle(), System.nanoTime());
+        RaidClient client = raidFactory.apply(config);
+        closeRaid();
+        long generation = raidGeneration;
+        var panel = new tetris.ui.raid.RaidPanel(settings.isColorBlindMode());
+        panel.setPreferredSize(GamePanel.preferredSizeFor(fitCellSize(settings.getScreenSize().cellPixels())));
+        JComponent previous = screens.remove(Screen.RAID);
+        if (previous != null) root.remove(previous);
+        addScreen(Screen.RAID, panel);
+        showScreen(Screen.RAID);
+        raidController = new RaidScreenController(getRootPane(), client, panel, settings.getKeyMap(),
+                mode == RaidMode.SOLO, settings.getControlStyle(),
+                () -> { if (generation == raidGeneration) {
+                    if (mode == RaidMode.SOLO) showSoloMenu();
+                    else openBattleModes();
+                } },
+                () -> { if (generation == raidGeneration) startRaid(mode); });
+        if (mode == RaidMode.RACE) panel.setGuide(RaidScreenController.raceGuide());
+    }
+
+    private void startOnlineRaid(tetris.feature.raid.api.RaidClient client, MatchConfig config,
+                                 LobbySnapshot.Role role) {
+        closeBattle();
+        closeRaid();
+        battleOnline = true;
+        PlayerId viewer = role == LobbySnapshot.Role.HOST ? PlayerId.ONE : PlayerId.TWO;
+        var panel = new tetris.ui.raid.RaidPanel(settings.isColorBlindMode());
+        panel.setPreferredSize(GamePanel.preferredSizeFor(fitCellSize(settings.getScreenSize().cellPixels())));
+        panel.setResultLabels("로비로", "다시 대전");
+        JComponent previous = screens.remove(Screen.RAID);
+        if (previous != null) root.remove(previous);
+        addScreen(Screen.RAID, panel);
+        showScreen(Screen.RAID);
+        long generation = raidGeneration;
+        raidController = RaidScreenController.online(getRootPane(), client, panel, viewer,
+                config.controlStyle(),
+                () -> { if (generation == raidGeneration) backToP2pLobby(); },
+                () -> { if (generation == raidGeneration) rematchP2p(); });
+    }
+
+    private void closeRaid() {
+        raidGeneration++;
+        if (raidController != null) {
+            raidController.close();
+            raidController = null;
+        }
     }
 }

@@ -1,12 +1,21 @@
 package tetris.ui;
 
+import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Composite;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
+import java.awt.Stroke;
 import java.util.function.Consumer;
 import javax.swing.JPanel;
+import javax.swing.Timer;
+import tetris.ui.theme.GameTheme;
+import tetris.ui.theme.PlayFx;
+import tetris.ui.theme.UiKit;
 import tetris.component.block.Block;
 import tetris.component.block.BlockType;
 import tetris.feature.data.Board;
@@ -21,7 +30,7 @@ import tetris.feature.setting.Settings;
  *
  * 배치 (c = 셀 크기, p = 여백 c/2): [p][보드 10c][p][정보 6c][p] x [p][보드 20c][p]
  */
-public class GamePanel extends JPanel implements GameListener {
+public class GamePanel extends JPanel implements GameListener, tetris.ui.input.ScreenVeil {
     private static final int INFO_COLUMNS = 6;
     private static final int NEXT_BOX_ROWS = 4;
 
@@ -33,6 +42,13 @@ public class GamePanel extends JPanel implements GameListener {
     private int cellSize;
     private boolean colorBlindMode;
     private String[] keyGuide = new String[0];
+    private final PlayFx fx = new PlayFx();
+    private final Timer fxTimer = new Timer(16, event -> {
+        fx.tick();
+        if (fx.active()) repaint();
+    });
+    private GameSnapshot previous;
+    private long startedAt = -1;
 
     /** onGameOver: Game Over 화면으로 넘어가도록 화면 흐름에 알린다 */
     public GamePanel(Settings settings, PausePanel pausePanel, Consumer<GameSnapshot> onGameOver) {
@@ -48,23 +64,78 @@ public class GamePanel extends JPanel implements GameListener {
 
         pausePanel.setVisible(false);
         add(pausePanel);
+        fxTimer.setRepeats(true);
+        fxTimer.setCoalesce(true);
         setCellSize(settings.getScreenSize().cellPixels());
         applySettings(settings);
     }
 
     /** 셀 크기에 맞는 패널 크기 (창 크기 계산·자동 축소용, RND-2·RND-3) */
     public static Dimension preferredSizeFor(int cellSize) {
-        int padding = cellSize / 2;
-        return new Dimension(
-                padding * 3 + cellSize * (Board.WIDTH + INFO_COLUMNS),
-                padding * 2 + cellSize * Board.HEIGHT);
+        tetris.ui.theme.SoloLayout layout = tetris.ui.theme.SoloLayout.of(cellSize);
+        return new Dimension(layout.width, layout.height);
+    }
+
+    /** 빈 칸 배경. 평평한 회색 대신 짙은 남색 */
+    public static final Color BOARD_BG = new Color(0x0B1024);
+
+    public int cellSize() {
+        return cellSize;
+    }
+
+    public java.awt.Rectangle boardBounds() {
+        return tetris.ui.theme.SoloLayout.of(cellSize).board;
+    }
+
+    public java.awt.Rectangle boardCellBounds(int row, int col) {
+        return tetris.ui.theme.SoloLayout.of(cellSize).boardCell(row, col);
+    }
+
+    public java.awt.Rectangle nextBounds() {
+        return firstNextBox();
+    }
+
+    /** 지금 그리는 다음 조각의 (localRow, localCol) 칸. 감사 테스트가 이 좌표를 읽는다 */
+    public java.awt.Rectangle nextCellBounds(int localRow, int localCol) {
+        Block next = snapshot == null ? null : snapshot.nextBlock();
+        Rectangle box = firstNextBox();
+        int pieceCell = tetris.ui.theme.PieceFit.cellSize(next == null ? null : next.getShape(), box.width, box.height, cellSize);
+        return tetris.ui.theme.SoloLayout.of(cellSize).centeredCell(box, next, localRow, localCol, pieceCell);
+    }
+
+    public java.awt.Rectangle effectsBounds() {
+        return tetris.ui.theme.SoloLayout.of(cellSize).effects;
+    }
+
+    public java.awt.Rectangle keyGuideBounds() {
+        return tetris.ui.theme.SoloLayout.of(cellSize).guide;
+    }
+
+    @Override
+    public java.awt.Color screenVeil() {
+        return pausePanel.isVisible() ? PausePanel.VEIL : null;
     }
 
     @Override
     public void onChanged(GameSnapshot snapshot) {
+        observe(snapshot);
         this.snapshot = snapshot;
         updateOverlays();
         repaint();
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        // 창에 붙으면 보이는지와 상관없이 켠다. 이 화면은 창을 띄울 때 메뉴 뒤에 숨은 채로 붙어서,
+        // isShowing()을 조건으로 두면 타이머가 시작되지 않아 점수 표시가 0에서 멈췄다
+        if (!fxTimer.isRunning()) fxTimer.start();
+    }
+
+    @Override
+    public void removeNotify() {
+        fxTimer.stop();
+        super.removeNotify();
     }
 
     @Override
@@ -136,126 +207,368 @@ public class GamePanel extends JPanel implements GameListener {
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
         Graphics2D g2 = Theme.smooth(g);
-        int padding = cellSize / 2;
-        int boardX = padding;
-        int boardY = padding;
+        tetris.ui.theme.SoloLayout layout = tetris.ui.theme.SoloLayout.of(cellSize);
+        UiKit.paintNight(g2, getWidth(), getHeight());
+        UiKit.paintMoon(g2, getWidth() - layout.crown.height, layout.cell / 2, layout.crown.height * 2 / 3);
+        int shake = fx.shakeX();
+        g2.translate(shake, 0);
+        paintCrownAboveBoard(g2, layout);
+        drawBoard(g2, layout.board.x, layout.board.y);
+        paintBoardFrame(g2, layout.board);
+        drawTSpin(g2, layout.board.x, layout.board.y);
+        fx.paintSparks(g2);
+        fx.paintPopup(g2, layout.board.x + layout.board.width / 2, layout.board.y + cellSize * 4, getHeight());
+        g2.translate(-shake, 0);
+        drawSideTabs(g2, layout);
+        drawHud(g2, layout);
+        drawKeyGuide(g2, layout);
+    }
 
-        drawBoard(g2, boardX, boardY);
-        drawInfo(g2, boardX + cellSize * Board.WIDTH + padding, boardY);
+    /** 왕관은 보드 위 여백에만 그린다. 플레이 칸을 덮지 않는다 */
+    private void paintCrownAboveBoard(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
+        var clip = g.getClip();
+        g.clipRect(layout.crown.x, layout.crown.y, layout.crown.width, layout.crown.height);
+        UiKit.paintCrown(g, layout.crown.x, layout.crown.y, layout.crown.width, layout.crown.height);
+        g.setClip(clip);
+    }
+
+    private void paintBoardFrame(Graphics2D g, java.awt.Rectangle board) {
+        tetris.ui.theme.SoloLayout layout = tetris.ui.theme.SoloLayout.of(cellSize);
+        int margin = layout.board.x - (layout.hold.x + layout.hold.width);
+        int thick = Math.max(14, margin - 2);
+        var clip = g.getClip();
+        java.awt.geom.Area outside = new java.awt.geom.Area(new java.awt.Rectangle(0, 0, getWidth(), getHeight()));
+        outside.subtract(new java.awt.geom.Area(board));
+        g.setClip(outside);
+        UiKit.paintFrame(g, UiKit.Tone.CYAN, board.x - thick, board.y - thick, board.width + thick * 2, board.height + thick * 2);
+        g.setClip(clip);
     }
 
     private void drawBoard(Graphics2D g, int x, int y) {
-        g.setColor(Theme.PANEL);
-        g.fillRect(x, y, cellSize * Board.WIDTH, cellSize * Board.HEIGHT);
-        g.setColor(Theme.GRID);
-        for (int col = 0; col <= Board.WIDTH; col++) {
-            g.drawLine(x + col * cellSize, y, x + col * cellSize, y + cellSize * Board.HEIGHT);
+        int boardW = cellSize * Board.WIDTH;
+        int boardH = cellSize * Board.HEIGHT;
+        g.setColor(BOARD_BG);
+        g.fillRect(x, y, boardW, boardH);
+        g.setColor(new Color(0x8FB7D8));
+        int dot = Math.max(1, cellSize / 16);
+        for (int row = 0; row < Board.HEIGHT; row++) {
+            for (int col = 0; col < Board.WIDTH; col++) {
+                int cx = x + col * cellSize + (cellSize - dot) / 2;
+                int cy = y + row * cellSize + (cellSize - dot) / 2;
+                UiKit.softDot(g, cx, cy, Math.max(2, dot), new Color(0x8FB7D8));
+            }
         }
-        for (int row = 0; row <= Board.HEIGHT; row++) {
-            g.drawLine(x, y + row * cellSize, x + cellSize * Board.WIDTH, y + row * cellSize);
-        }
-        if (snapshot == null) return;
-
-        int[][] cells = snapshot.cells();
-        for (int row = 0; row < cells.length; row++) {
-            for (int col = 0; col < cells[row].length; col++) {
-                int value = cells[row][col];
-                if (value <= 0) continue;
-                tetris.feature.item.ItemType item = snapshot.lockedItems().get(new tetris.feature.item.Cell(row, col));
-                drawCell(g, x + col * cellSize, y + row * cellSize, cellSize, BlockType.values()[value - 1], item);
+        if (snapshot != null) {
+            int[][] cells = snapshot.cells();
+            for (int row = 0; row < cells.length; row++) {
+                for (int col = 0; col < cells[row].length; col++) {
+                    int value = cells[row][col];
+                    if (value <= 0) continue;
+                    tetris.feature.item.ItemType item = snapshot.lockedItems().get(new tetris.feature.item.Cell(row, col));
+                    drawCell(g, x + col * cellSize, y + row * cellSize, cellSize, BlockType.values()[value - 1], item);
+                }
+            }
+            for (var cell : snapshot.clearingCells()) {
+                if (cell.row() < 0 || cell.row() >= Board.HEIGHT || cell.col() < 0 || cell.col() >= Board.WIDTH) continue;
+                g.setColor(Color.WHITE);
+                g.fillRect(x + cell.col() * cellSize, y + cell.row() * cellSize, cellSize, cellSize);
+            }
+            Block current = snapshot.currentBlock();
+            if (current != null) {
+                drawGhost(g, snapshot.ghostBlock(), x, y);
+                int[][] shape = current.getShape();
+                for (int r = 0; r < shape.length; r++) {
+                    for (int c = 0; c < shape[r].length; c++) {
+                        int row = current.getRow() + r;
+                        if (shape[r][c] == 0 || row < 0) continue;
+                        drawCell(g, x + (current.getCol() + c) * cellSize, y + row * cellSize, cellSize,
+                                current.getType(), current.itemCellAt(r, c).orElse(null));
+                    }
+                }
             }
         }
 
-        Block current = snapshot.currentBlock();
-        for (var cell : snapshot.clearingCells()) {
-            if (cell.row() < 0 || cell.row() >= Board.HEIGHT || cell.col() < 0 || cell.col() >= Board.WIDTH) continue;
+    }
+
+
+
+    // 가장 최근 Lock이 T-스핀이면 보드 위쪽에 표시한다 (TSP-4). 다음 Lock에서 판정이 바뀌면 사라진다
+    private void drawTSpin(Graphics2D g, int x, int y) {
+        if (snapshot == null || !snapshot.lastTSpin().isTSpin()) return;
+        String text = snapshot.lastTSpin() == tetris.feature.rule.TSpinType.MINI ? "T-SPIN MINI" : "T-SPIN!";
+        int fontSize = Math.max(15, cellSize * 4 / 5);
+        int boardWidth = cellSize * Board.WIDTH;
+        g.setFont(GameTheme.display(fontSize));
+        g.setColor(Color.WHITE);
+        UiKit.drawInBox(g, text, new Rectangle(x, y + cellSize, boardWidth, cellSize * 2), UiKit.Align.CENTER);
+    }
+
+    private void drawSideTabs(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
+        drawTabLabelAbove(g, "홀드", layout.hold);
+        UiKit.paintTab(g, false, layout.hold.x, layout.hold.y, layout.hold.width, layout.hold.height);
+        Rectangle holdInner = pieceBox(layout.hold);
+        if (snapshot != null && snapshot.holdBlock() != null) {
+            drawPiece(g, snapshot.holdBlock(), holdInner);
+        } else if (snapshot == null || snapshot.mode() != tetris.feature.game.GameMode.ITEM) {
+            g.setFont(Theme.font("비어 있음", Math.max(10, Math.min(13, cellSize * 2 / 5)), false));
+            g.setColor(new Color(0x8EA0BE));
+            UiKit.drawInBox(g, "홀드 없음", holdInner, UiKit.Align.CENTER);
+        }
+
+        drawTabLabelAbove(g, "다음", layout.next);
+        UiKit.paintTab(g, true, layout.next.x, layout.next.y, layout.next.width, layout.next.height);
+        Rectangle nextInner = pieceBox(layout.next);
+        boolean modern = snapshot != null && snapshot.nextBlocks().size() > 1;
+        if (modern) {
+            int count = snapshot.nextBlocks().size();
+            int gap = Math.max(4, cellSize / 4);
+            int boxH = Math.max(8, (nextInner.height - gap * (count - 1)) / count);
+            int y = nextInner.y;
+            for (Block preview : snapshot.nextBlocks()) {
+                drawPiece(g, preview, new Rectangle(nextInner.x, y, nextInner.width, boxH));
+                y += boxH + gap;
+            }
+        } else if (snapshot != null && snapshot.nextBlock() != null) {
+            drawPiece(g, snapshot.nextBlock(), nextInner);
+        }
+
+        drawStatus(g, layout);
+        drawLeftPanel(g, layout);
+    }
+
+    private void drawLeftPanel(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
+        Rectangle box = layout.effects;
+        if (box.width < 12 || box.height < 16) return;
+        // 다크 글래스 카드 배경 (노란색 금지: EffectsPanelTest가 효과가 없을 때 ACCENT 픽셀 0을 검증함)
+        g.setColor(new Color(8, 12, 28, 195));
+        g.fillRoundRect(box.x, box.y, box.width, box.height, 12, 12);
+        g.setColor(new Color(61, 224, 255, 85));
+        g.drawRoundRect(box.x, box.y, box.width - 1, box.height - 1, 12, 12);
+
+        if (snapshot != null && !snapshot.effects().isEmpty()) {
+            int label = Math.max(11, Math.min(13, cellSize / 2));
+            Graphics2D clip = (Graphics2D) g.create();
+            try {
+                clip.clipRect(box.x + 2, box.y + 2, Math.max(1, box.width - 4), Math.max(1, box.height - 4));
+                drawEffects(clip, snapshot.effects(), box.x + 6, box.y + 6, Math.max(12, box.width - 12), label,
+                        box.y + box.height - 6);
+            } finally {
+                clip.dispose();
+            }
+            return;
+        }
+        drawPlayInfoCard(g, box);
+    }
+
+    private void drawPlayInfoCard(Graphics2D g, Rectangle box) {
+        int pad = Math.max(6, Math.min(10, box.width / 12));
+        int innerW = Math.max(8, box.width - pad * 2);
+        int headerSize = Math.max(10, Math.min(13, cellSize * 2 / 5));
+        int rowLabelSize = Math.max(9, Math.min(11, cellSize / 3 + 1));
+        int rowValSize = Math.max(10, Math.min(13, cellSize * 2 / 5));
+        int y = box.y + pad;
+
+        String title = colorBlindMode ? "색맹 설정"
+                : (snapshot != null && snapshot.mode() == tetris.feature.game.GameMode.ITEM ? "아이템 정보" : "플레이 상태");
+        g.setFont(Theme.font(title, headerSize, true));
+        g.setColor(UiKit.CYAN);
+        UiKit.drawInBox(g, title, new Rectangle(box.x + pad, y, innerW, headerSize + 4), UiKit.Align.CENTER);
+        y += headerSize + 8;
+
+        g.setColor(new Color(61, 224, 255, 60));
+        g.drawLine(box.x + pad, y, box.x + box.width - pad, y);
+        y += 10;
+
+        String modeVal = snapshot == null ? "준비"
+                : (snapshot.mode() == tetris.feature.game.GameMode.ITEM ? "아이템" : "클래식");
+        String diffVal = snapshot == null ? "보통" : switch (snapshot.difficulty()) {
+            case EASY -> "쉬움";
+            case HARD -> "어려움";
+            default -> "보통";
+        };
+        String thirdLabel;
+        String thirdVal;
+        if (colorBlindMode) {
+            thirdLabel = "팔레트";
+            thirdVal = "Okabe-Ito";
+        } else if (snapshot != null && snapshot.mode() == tetris.feature.game.GameMode.ITEM) {
+            thirdLabel = "다음 아이템";
+            thirdVal = snapshot.nextItemLines() + "줄 후";
+        } else {
+            thirdLabel = "미리보기";
+            thirdVal = snapshot != null && snapshot.nextBlocks().size() > 1
+                    ? "NEXT " + snapshot.nextBlocks().size() : "NEXT 1";
+        }
+        String fourthLabel = "홀드";
+        String fourthVal = snapshot != null && snapshot.holdBlock() != null ? "보관 중" : "대기";
+
+        String[][] rows = {
+                {"모드", modeVal},
+                {"난이도", diffVal},
+                {thirdLabel, thirdVal},
+                {fourthLabel, fourthVal}
+        };
+        int blockH = rowLabelSize + rowValSize + 10;
+        int avail = Math.max(blockH, box.y + box.height - pad - y);
+        int rowStep = Math.min(blockH + 22, Math.max(blockH, avail / rows.length));
+        for (int i = 0; i < rows.length; i++) {
+            String[] row = rows[i];
+            if (y + rowLabelSize + rowValSize > box.y + box.height - 4) break;
+            g.setFont(Theme.font(row[0], rowLabelSize, false));
+            g.setColor(new Color(0x9FB0CC));
+            UiKit.drawInBox(g, row[0], new Rectangle(box.x + pad, y, innerW, rowLabelSize + 2), UiKit.Align.LEFT);
+            g.setFont(Theme.font(row[1], rowValSize, false));
             g.setColor(Color.WHITE);
-            g.fillRect(x + cell.col() * cellSize, y + cell.row() * cellSize, cellSize, cellSize);
-        }
-        if (current == null) return;
-        int[][] shape = current.getShape();
-        for (int r = 0; r < shape.length; r++) {
-            for (int c = 0; c < shape[r].length; c++) {
-                int row = current.getRow() + r;
-                if (shape[r][c] == 0 || row < 0) continue; // 보드 위 숨은 줄은 그리지 않는다
-                drawCell(g, x + (current.getCol() + c) * cellSize, y + row * cellSize, cellSize, current.getType(), current.itemCellAt(r, c).orElse(null));
+            UiKit.drawInBox(g, row[1], new Rectangle(box.x + pad, y + rowLabelSize + 3, innerW, rowValSize + 4), UiKit.Align.LEFT);
+            if (i < rows.length - 1 && y + rowStep - 6 < box.y + box.height - 6) {
+                g.setColor(new Color(61, 224, 255, 28));
+                g.drawLine(box.x + pad, y + rowStep - 6, box.x + box.width - pad, y + rowStep - 6);
             }
+            y += rowStep;
         }
     }
 
-    private void drawInfo(Graphics2D g, int x, int y) {
-        int width = cellSize * INFO_COLUMNS;
-        boolean compact = cellSize <= 20;
-        int labelSize = compact ? Math.max(6, cellSize / 2) : Math.max(9, cellSize * 9 / 20);
-        int valueSize = Math.max(12, cellSize * 4 / 5);
+    private void drawHud(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
+        drawCapsule(g, layout.level, "레벨", String.valueOf(snapshot == null ? 1 : snapshot.level()));
+        drawCapsule(g, layout.score, "점수", String.valueOf(snapshot == null ? 0 : fx.displayScore()));
+        drawCapsule(g, layout.lines, "줄", String.valueOf(snapshot == null ? 0 : snapshot.lines()));
+        drawCapsule(g, layout.time, "시간", elapsedText());
+    }
 
-        y = drawLabel(g, Messages.get("game.next"), x, y, labelSize);
-        int boxHeight = cellSize * NEXT_BOX_ROWS;
-        g.setColor(Theme.PANEL);
-        g.fillRect(x, y, width, boxHeight);
-        if (snapshot != null && snapshot.nextBlock() != null) drawNext(g, snapshot.nextBlock(), x, y, width, boxHeight);
-        y += boxHeight + cellSize / 2;
+    private void drawKeyGuide(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
+        Rectangle bar = layout.guide;
+        if (bar.width < 16 || bar.height < 16) return;
+        g.setColor(new Color(8, 12, 28, 210));
+        g.fillRoundRect(bar.x, bar.y, bar.width, bar.height, 12, 12);
+        g.setColor(new Color(61, 224, 255, 110));
+        g.drawRoundRect(bar.x, bar.y, bar.width - 1, bar.height - 1, 12, 12);
 
-        long score = snapshot == null ? 0 : snapshot.score();
-        int level = snapshot == null ? 1 : snapshot.level();
-        int lines = snapshot == null ? 0 : snapshot.lines();
-        String state = snapshot == null ? GameState.LOADING.name() : snapshot.state().name();
-        int lineHeight = labelSize + labelSize / 2;
-        int guideTop = cellSize / 2 + cellSize * Board.HEIGHT - lineHeight * (keyGuide.length + 1);
-        if (compact) {
-            java.util.List<String> rows = new java.util.ArrayList<>();
-            rows.add("SCORE " + score);
-            rows.add("LEVEL " + level + "  LINES " + lines);
-            rows.add("STATE " + state);
-            if (snapshot != null) {
-                rows.add("MODE " + snapshot.mode());
-                rows.add("DIFF " + snapshot.difficulty());
-                if (snapshot.mode() == tetris.feature.game.GameMode.ITEM)
-                    rows.add("NEXT ITEM " + snapshot.nextItemLines());
-            }
-            int plainRows = rows.size();
-            if (snapshot != null) {
-                for (var effect : snapshot.effects())
-                    rows.add(effectTag(effect) + " " + remainingText(effect));
-            }
-            g.setFont(Theme.text(labelSize, true));
-            for (int i = 0; i < rows.size(); i++) {
-                String row = rows.get(i);
-                g.setColor(i < plainRows ? Theme.TEXT : Theme.ACCENT); // 지속 효과 줄은 노란색
-                // 큰 점수도 정보 영역 밖으로 넘치지 않도록 이 행에서만 글자 크기를 줄인다.
-                int fontSize = labelSize;
-                g.setFont(Theme.text(fontSize, true));
-                while (g.getFontMetrics().stringWidth(row) > width && fontSize > 3)
-                    g.setFont(Theme.text(--fontSize, true));
-                g.drawString(row, x, y += labelSize + labelSize / 2);
-            }
-        } else {
-            y = drawValue(g, Messages.get("game.score"), String.valueOf(score), x, y, labelSize, valueSize);
-            // LEVEL·LINES는 한 줄 두 칸으로 놓아 지속 효과 섹션 자리를 만든다
-            drawValue(g, Messages.get("game.level"), String.valueOf(level), x, y, labelSize, valueSize);
-            y = drawValue(g, Messages.get("game.lines"), String.valueOf(lines), x + width / 2, y, labelSize, valueSize);
-            y = drawValue(g, Messages.get("game.state"), state, x, y, labelSize, labelSize + labelSize / 4);
-            if (snapshot != null) {
-                g.setFont(Theme.text(labelSize, true));
-                g.setColor(Theme.TEXT);
-                int step = labelSize + labelSize / 2;
-                g.drawString("MODE " + snapshot.mode(), x, y += step);
-                g.drawString("DIFFICULTY " + snapshot.difficulty(), x, y += step);
-                if (snapshot.mode() == tetris.feature.game.GameMode.ITEM)
-                    g.drawString("NEXT ITEM " + snapshot.nextItemLines(), x, y += step);
-                drawEffects(g, snapshot.effects(), x, y, width, labelSize, guideTop);
-            }
+        String[] lines = fullGuideLines();
+        int padX = 12;
+        int padY = 4;
+        int innerH = Math.max(8, bar.height - padY * 2);
+        int lineH = Math.max(8, innerH / lines.length);
+        int fontSize = Math.max(10, Math.min(13, lineH - 4));
+        g.setColor(new Color(0xE8EEF8));
+        for (int i = 0; i < lines.length; i++) {
+            g.setFont(Theme.font(lines[i], fontSize, false));
+            UiKit.drawInBox(g, lines[i],
+                    new Rectangle(bar.x + padX, bar.y + padY + i * lineH, Math.max(8, bar.width - padX * 2), lineH),
+                    UiKit.Align.CENTER);
         }
+    }
 
-        // Key Guide는 보드 아래쪽에 맞춰 붙인다
-        int guideY = cellSize / 2 + cellSize * Board.HEIGHT - lineHeight * keyGuide.length;
-        drawLabel(g, Messages.get("game.keys"), x, guideY - lineHeight, labelSize);
-        g.setFont(Theme.text(labelSize, false));
-        g.setColor(Theme.TEXT);
-        for (String line : keyGuide) {
-            guideY += lineHeight;
-            g.drawString(line, x, guideY - labelSize / 3);
+    private String[] fullGuideLines() {
+        String move = keyGuide.length > 0 ? compactSpaces(keyGuide[0]) : "←/→ 이동";
+        String soft = keyGuide.length > 1 ? compactSpaces(keyGuide[1]) : "↓ 소프트 드롭";
+        String rot = expandTrailingKey(keyGuide.length > 2 ? compactSpaces(keyGuide[2]) : "↑ 회전 / Z", "반시계");
+        String hard = expandTrailingKey(keyGuide.length > 3 ? compactSpaces(keyGuide[3]) : "Space 하드 드롭 / C", "홀드");
+        String pause = keyGuide.length > 4 ? compactSpaces(keyGuide[4]) : "P 일시정지";
+        String quit = keyGuide.length > 5 ? compactSpaces(keyGuide[5]) : "Q 게임 끝내기";
+        return new String[] {
+                move + "   " + rot + "   " + soft,
+                hard + "   " + pause + "   " + quit
+        };
+    }
+
+    private static String expandTrailingKey(String raw, String suffixLabel) {
+        int slash = raw.lastIndexOf(" / ");
+        if (slash <= 0 || slash + 3 >= raw.length()) return raw;
+        return raw.substring(0, slash).trim() + "   " + raw.substring(slash + 3).trim() + " " + suffixLabel;
+    }
+
+    private static String compactSpaces(String raw) {
+        return raw == null ? "" : raw.trim().replaceAll("\\s{2,}", " ");
+    }
+
+    private void drawTabLabelAbove(Graphics2D g, String label, Rectangle tab) {
+        int labelH = Math.max(12, Math.min(16, cellSize / 2));
+        g.setFont(Theme.font(label, labelH, true));
+        g.setColor(new Color(0xD8E4F8));
+        UiKit.drawInBox(g, label, new Rectangle(tab.x, Math.max(0, tab.y - labelH - 3), tab.width, labelH), UiKit.Align.CENTER);
+    }
+
+    private void drawStatus(Graphics2D g, tetris.ui.theme.SoloLayout layout) {
+        if (layout.status.height < 8 || layout.status.width < 8) return;
+        int labelH = Math.max(10, Math.min(13, cellSize * 2 / 5));
+        g.setFont(Theme.font("모드", labelH, false));
+        g.setColor(new Color(0x9FB0CC));
+        UiKit.drawInBox(g, "모드",
+                new Rectangle(layout.status.x, layout.status.y - labelH - 3, layout.status.width, labelH),
+                UiKit.Align.CENTER);
+        String text = statusText();
+        Rectangle box = layout.status;
+        UiKit.paintCapsule(g, box.x, box.y, box.width, box.height);
+        Rectangle inner = UiKit.contentBox(UiKit.AssetSlot.CAPSULE, box);
+        int size = fitCapsuleFont(g, text, Math.max(16, inner.width - 6), Math.max(10, Math.min(13, box.height - 10)), 9, false);
+        g.setFont(Theme.font(text, size, false));
+        g.setColor(Color.WHITE);
+        UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, box, text, UiKit.Align.CENTER);
+    }
+
+    private String statusText() {
+        if (snapshot == null) return "준비";
+        String mode = snapshot.mode() == tetris.feature.game.GameMode.ITEM ? "아이템" : "클래식";
+        String diff = switch (snapshot.difficulty()) {
+            case EASY -> "쉬움";
+            case HARD -> "어려움";
+            default -> "보통";
+        };
+        return mode + " · " + diff;
+    }
+
+    private void drawCapsule(Graphics2D g, Rectangle box, String label, String value) {
+        if (box.width < 4 || box.height < 4) return;
+        UiKit.paintCapsule(g, box.x, box.y, box.width, box.height);
+        int labelH = Math.max(10, Math.min(13, cellSize * 2 / 5));
+        int gap = 3;
+        g.setFont(Theme.font(label, labelH, false));
+        g.setColor(UiKit.CYAN);
+        UiKit.drawInBox(g, label, new Rectangle(box.x, box.y - gap - labelH, box.width, labelH), UiKit.Align.CENTER);
+        Rectangle inner = UiKit.contentBox(UiKit.AssetSlot.CAPSULE, box);
+        int size = fitCapsuleFont(g, value, Math.max(16, inner.width - 8), Math.max(11, Math.min(18, box.height * 3 / 5)), 10, true);
+        g.setFont(Theme.font(value, size, true));
+        g.setColor(Color.WHITE);
+        UiKit.drawInAsset(g, UiKit.AssetSlot.CAPSULE, box, value, UiKit.Align.CENTER);
+    }
+
+    private static int fitCapsuleFont(Graphics2D g, String text, int maxWidth, int maxSize, int minSize, boolean bold) {
+        for (int size = maxSize; size >= minSize; size--) {
+            g.setFont(Theme.font(text, size, bold));
+            if (GameTheme.width(g, text) <= maxWidth) return size;
         }
+        return minSize;
+    }
+
+    private void drawPiece(Graphics2D g, Block piece, Rectangle box) {
+        if (piece == null || box.width <= 1 || box.height <= 1) return;
+        int[][] shape = piece.getShape();
+        tetris.ui.theme.PieceFit fit = tetris.ui.theme.PieceFit.of(shape, box.x, box.y, box.width, box.height, cellSize);
+        if (fit.rows == 0) return;
+        var clip = g.getClip();
+        g.clipRect(box.x, box.y, box.width, box.height);
+        try {
+            for (int r = 0; r < shape.length; r++) {
+                for (int c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c] == 0) continue;
+                    drawCell(g, fit.originX + (c - fit.minCol) * fit.cell, fit.originY + (r - fit.minRow) * fit.cell,
+                            fit.cell, piece.getType(), piece.itemCellAt(r, c).orElse(null));
+                }
+            }
+        } finally {
+            g.setClip(clip);
+        }
+    }
+
+    private Rectangle pieceBox(Rectangle tab) {
+        int inset = Math.max(8, UiKit.tabCorner(tab.width, tab.height) / 2);
+        return new Rectangle(tab.x + inset, tab.y + inset, Math.max(1, tab.width - inset * 2),
+                Math.max(1, tab.height - inset * 2));
+    }
+
+    private Rectangle firstNextBox() {
+        tetris.ui.theme.SoloLayout layout = tetris.ui.theme.SoloLayout.of(cellSize);
+        return pieceBox(layout.next);
     }
 
     private static final int GAUGE_SEGMENTS = 10; // 지속 효과의 최대 남은 블록 수
@@ -348,6 +661,32 @@ public class GamePanel extends JPanel implements GameListener {
         }
     }
 
+    /** 착지 미리보기: 떨어지는 블록과 같은 칸을 반투명으로 (GST-1, GST-2) */
+    private void drawGhost(Graphics2D g, Block ghost, int originX, int originY) {
+        if (ghost == null) return;
+        Color color = palette.color(ghost.getType(), colorBlindMode);
+        String letter = String.valueOf(ghost.getType().letter());
+        int[][] shape = ghost.getShape();
+        for (int r = 0; r < shape.length; r++) {
+            for (int c = 0; c < shape[r].length; c++) {
+                int row = ghost.getRow() + r;
+                if (shape[r][c] == 0 || row < 0) continue;
+                tetris.ui.theme.BlockCells.paintGhost(g, originX + (ghost.getCol() + c) * cellSize,
+                        originY + row * cellSize, cellSize, color, letter, palette.textColor(color), colorBlindMode);
+            }
+        }
+    }
+
+    private int drawHold(Graphics2D g, Block hold, int x, int y, int width, int labelSize) {
+        y = drawLabel(g, Messages.get("game.hold"), x, y, labelSize);
+        int boxHeight = cellSize * 2;
+        g.setColor(Theme.PANEL);
+        g.fillRect(x, y, width, boxHeight);
+        UiKit.paintTab(g, false, x, y, width, boxHeight);
+        if (hold != null) drawNext(g, hold, x, y, width, boxHeight);
+        return y + boxHeight + cellSize / 4;
+    }
+
     /** 현재 블록·고정 블록·Next 공용: 색 + 문자를 항상 함께 그린다 (RND-4, RND-5) */
     private void drawCell(Graphics2D g, int x, int y, int size, BlockType type) {
         drawCell(g, x, y, size, type, null);
@@ -355,31 +694,72 @@ public class GamePanel extends JPanel implements GameListener {
 
     private void drawCell(Graphics2D g, int x, int y, int size, BlockType type, tetris.feature.item.ItemType item) {
         Color color = item == null ? palette.color(type, colorBlindMode) : Color.WHITE;
-        g.setColor(color);
-        g.fillRect(x, y, size, size);
-        g.setColor(color.darker());
-        g.drawRect(x, y, size - 1, size - 1);
-
-        g.setFont(Theme.blockLetter(size * 3 / 5));
-        g.setColor(item == null ? palette.textColor(color) : Color.BLACK);
-        String letter = item != null ? String.valueOf(item.symbol()) : type == BlockType.W ? "W" : "O";
-        int textX = x + (size - g.getFontMetrics().stringWidth(letter)) / 2;
-        int textY = y + (size - g.getFontMetrics().getHeight()) / 2 + g.getFontMetrics().getAscent();
-        g.drawString(letter, textX, textY);
+        String letter = item != null ? String.valueOf(item.symbol()) : String.valueOf(type.letter());
+        tetris.ui.theme.BlockCells.paintBlock(g, x, y, size, color, letter,
+                item == null ? palette.textColor(color) : Color.BLACK);
     }
 
     private static int drawLabel(Graphics2D g, String label, int x, int y, int size) {
         g.setFont(Theme.text(size, true));
-        g.setColor(Theme.DIM_TEXT);
+        g.setColor(UiKit.CYAN);
         g.drawString(label, x, y + size);
         return y + size + size / 2;
     }
 
     private static int drawValue(Graphics2D g, String label, String value, int x, int y, int labelSize, int valueSize) {
         y = drawLabel(g, label, x, y, labelSize);
-        g.setFont(Theme.text(valueSize, true));
-        g.setColor(Theme.TEXT);
+        boolean digits = Messages.get("game.score").equals(label) || Messages.get("game.level").equals(label)
+                || Messages.get("game.lines").equals(label);
+        g.setFont(digits ? GameTheme.digits(valueSize) : Theme.text(valueSize, true));
+        g.setColor(Color.WHITE);
         g.drawString(value, x, y + valueSize);
         return y + valueSize + labelSize;
+    }
+
+    private String elapsedText() {
+        long millis = startedAt < 0 ? 0 : Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
+        long seconds = millis / 1000;
+        return String.format("%d:%02d", seconds / 60, seconds % 60);
+    }
+
+    private void observe(GameSnapshot next) {
+        if (next == null) return;
+        fx.noteScore(next.score());
+        if (startedAt < 0 && next.state() == GameState.PLAYING) startedAt = System.nanoTime();
+        if (previous == null) {
+            previous = next;
+            return;
+        }
+        int cleared = clearingRows(next);
+        boolean tSpin = next.lastTSpin() != null && next.lastTSpin().isTSpin();
+        if (cleared > 0 && previous.clearingCells().isEmpty()) {
+            int row = 0;
+            for (var cell : next.clearingCells()) row += cell.row();
+            row /= Math.max(1, next.clearingCells().size());
+            fx.noteClear(cleared, tSpin, next.lastTSpin() == tetris.feature.rule.TSpinType.MINI,
+                    cellSize / 2 + cellSize * Board.WIDTH / 2, cellSize / 2 + row * cellSize + cellSize / 2);
+        } else if (cleared == 0 && previous.currentBlock() != null && next.currentBlock() != previous.currentBlock()) {
+            fx.noteClear(0, false, false, 0, 0);
+        }
+        if (next.level() > previous.level()) fx.noteLevel(next.level());
+        if (isHardDrop(previous, next) && previous.ghostBlock() != null) {
+            fx.noteHardDrop(cellSize / 2 + previous.ghostBlock().getCol() * cellSize + cellSize / 2,
+                    cellSize / 2 + previous.ghostBlock().getRow() * cellSize);
+        }
+        previous = next;
+    }
+
+    private static int clearingRows(GameSnapshot snapshot) {
+        java.util.Set<Integer> rows = new java.util.HashSet<>();
+        for (var cell : snapshot.clearingCells()) rows.add(cell.row());
+        return rows.size();
+    }
+
+    private static boolean isHardDrop(GameSnapshot before, GameSnapshot after) {
+        Block current = before.currentBlock();
+        Block ghost = before.ghostBlock();
+        if (current == null || ghost == null || ghost.getRow() < current.getRow() + 2) return false;
+        Block spawned = after.currentBlock();
+        return spawned == null || spawned.getRow() < current.getRow();
     }
 }

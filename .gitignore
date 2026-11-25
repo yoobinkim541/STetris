@@ -6,3 +6,9 @@ out/
 bin/
 .vscode/
 debug.log
+relay/.venv/
+relay/__pycache__/
+relay/.pytest_cache/
+__pycache__/
+hs_err_pid*.log
+replay_pid*.log

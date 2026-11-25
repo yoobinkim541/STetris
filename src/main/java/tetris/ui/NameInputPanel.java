@@ -2,9 +2,12 @@ package tetris.ui;
 
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
@@ -23,7 +26,7 @@ public class NameInputPanel extends JPanel {
     static final int MAX_LENGTH = 10; // NAM-2
 
     private final Consumer<String> onSubmit;
-    private final JTextField field = new JTextField(MAX_LENGTH + 2);
+    private final JTextField field = new CapsuleField();
     private final JLabel scoreLabel = label("", 28, true, Theme.TEXT);
     private final JLabel hintLabel = label(" ", 14, false, Theme.WARNING);
 
@@ -31,37 +34,74 @@ public class NameInputPanel extends JPanel {
     public NameInputPanel(Consumer<String> onSubmit) {
         if (onSubmit == null) throw new IllegalArgumentException("onSubmit cannot be null");
         this.onSubmit = onSubmit;
-        setBackground(Theme.BACKGROUND);
+        setOpaque(false);
         setLayout(new GridBagLayout());
 
         ((AbstractDocument) field.getDocument()).setDocumentFilter(createNameFilter());
-        field.setFont(Theme.text(22, true));
+        field.setFont(Theme.font("이름", 22, false));
         field.setHorizontalAlignment(SwingConstants.CENTER);
-        field.setBackground(Theme.PANEL);
-        field.setForeground(Theme.TEXT);
-        field.setCaretColor(Theme.ACCENT);
-        field.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Theme.ACCENT), BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+        field.setForeground(Color.WHITE);
+        field.setCaretColor(tetris.ui.theme.UiKit.CYAN);
+        field.setOpaque(false);
+        field.setBorder(BorderFactory.createEmptyBorder(10, 28, 10, 28));
+        field.setPreferredSize(new java.awt.Dimension(320, 48));
+        field.setMinimumSize(new java.awt.Dimension(240, 44));
         field.addActionListener(e -> submit());
+        field.addMouseListener(new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e) { field.requestFocusInWindow(); }
+        });
+        JLabel save = new SavePill("저장");
+        save.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        save.addMouseListener(new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e) { clickSave(); }
+        });
 
-        addRow(label(Messages.get("name.title"), 34, true, Theme.ACCENT), 0, 24);
-        addRow(scoreLabel, 1, 24);
-        addRow(label(Messages.get("name.prompt"), 14, false, Theme.DIM_TEXT), 2, 8);
+        addRow(label(Messages.get("name.title"), 32, true, Theme.ACCENT), 0, 18);
+        addRow(scoreLabel, 1, 20);
+        addRow(label(Messages.get("name.prompt"), 13, false, Theme.DIM_TEXT), 2, 10);
         addRow(field, 3, 8);
-        addRow(hintLabel, 4, 24);
-        addRow(label(Messages.keyGuide(MainFrame.Screen.NAME_INPUT, null), 13, false, Theme.DIM_TEXT), 5, 0);
+        addRow(hintLabel, 4, 10);
+        addRow(save, 5, 16);
+        addRow(label(Messages.keyGuide(MainFrame.Screen.NAME_INPUT, null), 13, false, Theme.DIM_TEXT), 6, 0);
+
     }
 
     /** 새 기록을 받을 준비: 입력칸을 비우고 점수를 보여준다 */
     public void prepare(long score) {
         field.setText("");
         hintLabel.setText(" ");
-        scoreLabel.setText(Messages.get("game.score") + "  " + score);
+        scoreLabel.setText("점수  " + score);
     }
 
     /** 화면이 보인 뒤 입력칸에 포커스를 준다 */
     public void focusField() {
         field.requestFocusInWindow();
+    }
+
+    public javax.swing.JTextField nameField() {
+        return field;
+    }
+
+    /** 저장을 누르거나 테스트를 이 메서드로 확정한다. 입력칸 포커스는 유지한다 */
+    public void clickSave() {
+        field.requestFocusInWindow();
+        submit();
+    }
+
+    @Override
+    protected void paintComponent(java.awt.Graphics g) {
+        java.awt.Graphics2D g2 = (java.awt.Graphics2D) g;
+        tetris.ui.theme.GameTheme.applyQuality(g2);
+        int w = getWidth();
+        int h = getHeight();
+        tetris.ui.theme.UiKit.paintScene(g2, w, h);
+        int cardW = Math.min(w - 48, 440);
+        int cardH = Math.min(h - 72, 372);
+        int cardX = (w - cardW) / 2;
+        int cardY = (h - cardH) / 2;
+        g2.setColor(new Color(8, 12, 28, 212));
+        g2.fillRoundRect(cardX + 8, cardY + 8, cardW - 16, cardH - 16, 18, 18);
+        tetris.ui.theme.UiKit.paintFrame(g2, tetris.ui.theme.UiKit.Tone.CYAN, cardX, cardY, cardW, cardH);
     }
 
     private void submit() {
@@ -81,10 +121,93 @@ public class NameInputPanel extends JPanel {
     }
 
     private static JLabel label(String text, int size, boolean bold, Color color) {
-        JLabel label = new JLabel(text, SwingConstants.CENTER);
-        label.setFont(Theme.text(size, bold));
+        JLabel label = new ThemedLabel(text);
+        label.setFont(size > 14 ? tetris.ui.theme.GameTheme.display(size) : tetris.ui.theme.GameTheme.text(size, bold));
         label.setForeground(color);
         return label;
+    }
+
+    private static final class SavePill extends JLabel {
+        private SavePill(String text) {
+            super(text, SwingConstants.CENTER);
+            setOpaque(false);
+            setFont(tetris.ui.theme.GameTheme.display(18));
+            setForeground(Color.WHITE);
+            setPreferredSize(new java.awt.Dimension(176, 40));
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            java.awt.Graphics2D g2 = Theme.smooth(g);
+            tetris.ui.theme.UiKit.paintButton(g2, true, 0, 0, getWidth(), getHeight(), false, tetris.ui.theme.UiKit.pulse());
+            g2.setFont(getFont());
+            g2.setColor(Color.WHITE);
+            tetris.ui.theme.UiKit.drawInBox(g2, getText(),
+                    new java.awt.Rectangle(0, 0, getWidth(), getHeight()),
+                    tetris.ui.theme.UiKit.Align.CENTER);
+        }
+    }
+
+    private static final class ThemedLabel extends JLabel {
+        private ThemedLabel(String text) {
+            super(text, SwingConstants.CENTER);
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g;
+            tetris.ui.theme.GameTheme.applyQuality(g2);
+            g2.setFont(getFont());
+            g2.setColor(getForeground());
+            int baseline = (getHeight() + g2.getFontMetrics().getAscent() - g2.getFontMetrics().getDescent()) / 2;
+            if (getFont().getSize() > 14) {
+                tetris.ui.theme.CrystalText.paint(g2, getText(), getFont(), getWidth() / 2, baseline, false);
+            } else {
+                tetris.ui.theme.UiKit.drawInBox(g2, getText(), new java.awt.Rectangle(0, 0, getWidth(), getHeight()),
+                        tetris.ui.theme.UiKit.Align.CENTER);
+            }
+        }
+    }
+
+    private static final class CapsuleField extends JTextField {
+        private CapsuleField() {
+            super(MAX_LENGTH + 2);
+            setOpaque(false);
+            setPreferredSize(new java.awt.Dimension(320, 48));
+        }
+
+        @Override
+        public java.awt.Dimension getPreferredSize() {
+            return new java.awt.Dimension(320, 48);
+        }
+
+        @Override
+        public java.awt.Dimension getMinimumSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            java.awt.Graphics2D g2 = Theme.smooth(g);
+            tetris.ui.theme.UiKit.paintCapsule(g2, 0, 0, getWidth(), getHeight());
+            g2.setFont(getFont());
+            g2.setColor(getForeground());
+            String value = getText() == null ? "" : getText();
+            java.awt.Rectangle hole = tetris.ui.theme.UiKit.contentBox(tetris.ui.theme.UiKit.AssetSlot.CAPSULE,
+                    new java.awt.Rectangle(0, 0, getWidth(), getHeight()));
+            tetris.ui.theme.UiKit.drawInBox(g2, value.isEmpty() ? " " : value, hole, tetris.ui.theme.UiKit.Align.CENTER);
+            if (!isFocusOwner()) return;
+            java.awt.geom.Rectangle2D ink = value.isEmpty()
+                    ? tetris.ui.theme.GameTheme.drawnBounds(g2.getFont(), "가", g2.getFontRenderContext())
+                    : tetris.ui.theme.GameTheme.drawnBounds(g2.getFont(), value, g2.getFontRenderContext());
+            int caretX = value.isEmpty()
+                    ? hole.x + hole.width / 2
+                    : (int) Math.round(hole.x + (hole.width - ink.getWidth()) / 2.0 + ink.getWidth()) + 2;
+            int caretY = (int) Math.round(hole.y + hole.height / 2.0 - ink.getHeight() / 2.0);
+            g2.setColor(tetris.ui.theme.UiKit.CYAN);
+            g2.fillRect(caretX, caretY, 2, Math.max(8, (int) Math.ceil(ink.getHeight())));
+        }
     }
 
     /**

@@ -1,8 +1,10 @@
 package tetris.ui;
 
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.KeyEventDispatcher;
 import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
@@ -16,16 +18,16 @@ import tetris.feature.setting.GameAction;
 import tetris.feature.setting.KeyMap;
 import tetris.feature.setting.ScreenSize;
 import tetris.feature.setting.Settings;
+import tetris.feature.setting.ControlStyle;
 
 /**
- * 설정 화면 (SET-2, SET-8): Screen Size / Difficulty / Control Keys / Color Blind / Reset Scoreboard / Reset Settings.
- * 기존 SettingScreen 대체. "개발자: 연결 상태 표시"는 {@code --dev}로 실행했거나 이미 켜져 있을 때만 Color Blind 아래에
+ * 설정 화면 (SET-2, SET-8): Screen Size / Difficulty / Control Keys / Color Blind / 조작 방식 / Reset.
  * 보인다(일반 실행 화면은 2차 설정 화면과 같다. 켜져 있으면 끌 수 있어야 하므로 보인다).
  * 유효한 변경은 즉시 적용·저장한다 (SET-3). 저장 실패 시 이번 실행에는 적용하고 안내만 한다 (SET-4).
  */
 public class SettingPanel extends JPanel {
     private enum Item {
-        SCREEN_SIZE, DIFFICULTY, CONTROL_KEYS, COLOR_BLIND, DEV_NET_OVERLAY, RESET_SCOREBOARD, RESET_SETTINGS
+        SCREEN_SIZE, DIFFICULTY, CONTROL_KEYS, COLOR_BLIND, CONTROL_STYLE, EFFECTS, SFX, BGM, DEV_NET_OVERLAY, RESET_SCOREBOARD, RESET_SETTINGS
     }
 
     private static final Item[] ALL_ITEMS = Item.values();
@@ -45,7 +47,7 @@ public class SettingPanel extends JPanel {
     private ConfirmDialog confirmDialog;
     private String notice = "";
     private boolean noticeIsError;   // 경고색으로 그릴지 (거부·저장 실패)
-
+    private final tetris.ui.input.Hits hits = new tetris.ui.input.Hits();
     /**
      * onChanged: 설정 값이 바뀐 뒤 호출. 화면 반영과 저장을 하고 저장 성공 여부를 돌려준다.
      * onResetScoreboard: 스코어보드를 비우고 저장 성공 여부를 돌려준다. onBack: Main Menu로 (Esc)
@@ -76,6 +78,7 @@ public class SettingPanel extends JPanel {
         KeyBindingManager.bindKey(this, KeyEvent.VK_RIGHT, listActive, () -> changeValue(1));
         KeyBindingManager.bindKey(this, KeyEvent.VK_ENTER, listActive, this::activateSelected);
         KeyBindingManager.bindKey(this, KeyEvent.VK_ESCAPE, listActive, this::back);
+        tetris.ui.input.MenuMouse.install(this, hits, this::hoverHit, this::clickHit);
     }
 
     /** 화면에 들어올 때마다 설정 목록 맨 위에서 시작 */
@@ -109,6 +112,10 @@ public class SettingPanel extends JPanel {
                 settings.setColorBlindMode(!settings.isColorBlindMode());
                 applyChange("");
             }
+            case CONTROL_STYLE -> changeControlStyle(1);
+            case EFFECTS -> changeEffects(1);
+            case SFX -> toggleSfx();
+            case BGM -> toggleBgm();
             case DEV_NET_OVERLAY -> {
                 settings.setDevNetworkOverlay(!settings.isDevNetworkOverlay());
                 applyChange("");
@@ -201,28 +208,63 @@ public class SettingPanel extends JPanel {
         return notice;
     }
 
-    /** ←/→: 선택한 항목이 순환형(Screen Size, Difficulty)일 때만 값을 바꾼다. 설정 목록에서만 */
+    /** ←/→: 선택한 항목이 순환형일 때만 값을 바꾼다. 설정 목록에서만 */
     public void changeValue(int delta) {
         if (inControlKeys) return;
         notice = "";
         switch (items().get(selected)) {
             case SCREEN_SIZE -> changeScreenSize(delta);
             case DIFFICULTY -> changeDifficulty(delta);
+            case CONTROL_STYLE -> changeControlStyle(delta);
+            case EFFECTS -> changeEffects(delta);
+            case SFX -> toggleSfx();
+            case BGM -> toggleBgm();
             default -> { }
         }
     }
 
-    // Small -> Medium -> Large 순환
+    // Small -> Medium -> Large -> 전체 화면 순환. 창 크기는 전체 화면을 꺼면 돌아온다
     private void changeScreenSize(int delta) {
-        ScreenSize[] sizes = ScreenSize.values();
-        settings.setScreenSize(sizes[Theme.cycle(settings.getScreenSize().ordinal(), delta, sizes.length)]);
+        int index = settings.isFullscreen() ? 3 : settings.getScreenSize().ordinal();
+        int next = Theme.cycle(index, delta, 4);
+        if (next == 3) settings.setFullscreen(true);
+        else {
+            settings.setFullscreen(false);
+            settings.setScreenSize(ScreenSize.values()[next]);
+        }
         applyChange("");
+    }
+
+    private String screenSizeLabel() {
+        return Messages.get(settings.isFullscreen() ? "size.FULLSCREEN" : "size." + settings.getScreenSize().name());
     }
 
     // Easy -> Normal -> Hard 순환 (SET-8). 다음 게임부터 적용된다
     private void changeDifficulty(int delta) {
         Difficulty[] difficulties = Difficulty.values();
         settings.setDifficulty(difficulties[Theme.cycle(settings.getDifficulty().ordinal(), delta, difficulties.length)]);
+        applyChange("");
+    }
+
+    private void changeControlStyle(int delta) {
+        ControlStyle[] styles = ControlStyle.values();
+        settings.setControlStyle(styles[Theme.cycle(settings.getControlStyle().ordinal(), delta, styles.length)]);
+        applyChange("");
+    }
+
+    private void changeEffects(int delta) {
+        if (delta == 0) return;
+        settings.setEffectsHigh(!settings.isEffectsHigh());
+        applyChange("");
+    }
+
+    private void toggleSfx() {
+        settings.setSfxEnabled(!settings.isSfxEnabled());
+        applyChange("");
+    }
+
+    private void toggleBgm() {
+        settings.setBgmEnabled(!settings.isBgmEnabled());
         applyChange("");
     }
 
@@ -283,39 +325,141 @@ public class SettingPanel extends JPanel {
     // ── 그리기 ───────────────────────────────
     @Override
     protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
         Graphics2D g2 = Theme.smooth(g);
         int w = getWidth();
         int h = getHeight();
-        int unit = Theme.unit(h);
-
+        hits.begin(null);
+        tetris.ui.theme.UiKit.paintScene(g2, w, h);
+        int unit = Math.max(16, (Theme.unit(h) / 8) * 8);
+        int pad = 8;
         String title = inControlKeys ? Messages.get("settings.controlKeys") : Messages.get("settings.title");
-        g2.setFont(Theme.text(unit * 2, true));
-        g2.setColor(Theme.ACCENT);
-        Theme.drawCentered(g2, title, w / 2, unit * 4);
+        int titleSize = Math.max(16, unit * 2);
+        int titleBaseline = pad * 6 + titleSize;
+        paintHeading(g2, title, titleSize, w / 2, titleBaseline);
+        paintBackButton(g2, pad, unit);
 
         List<String[]> rows = inControlKeys ? keyRows() : settingRows();
-        int lineHeight = unit * 2;
-        int y = unit * 7;
-        int labelX = w / 8;
-        int valueRight = w * 7 / 8;
+        int rowH = Math.max(38, Math.min(44, (unit * 2 / 8) * 8));
+        int guideReserve = Math.max(44, unit * 3);
+        int noticeReserve = notice.isEmpty() ? 16 : unit * 3;
+        int minTop = ((titleBaseline + pad * 2) / 8) * 8;
+        int availH = Math.max(rowH * 4, h - minTop - guideReserve - noticeReserve);
+        if (rows.size() * rowH > availH) {
+            rowH = Math.max(30, availH / Math.max(1, rows.size()));
+        }
+        int y = minTop + Math.max(0, (availH - rows.size() * rowH) / 3);
+        int labelX = pad * 4;
+        int rowW = Math.max(pad * 8, w - pad * 8);
+        boolean colorBlind = settings.isColorBlindMode();
         for (int i = 0; i < rows.size(); i++) {
+            java.awt.Rectangle row = new java.awt.Rectangle(labelX, y, rowW, Math.max(24, rowH - pad));
             boolean isSelected = i == selected;
-            g2.setFont(Theme.text(unit, isSelected));
-            g2.setColor(isSelected ? Theme.ACCENT : Theme.TEXT);
-            g2.drawString((isSelected ? "▶ " : "   ") + rows.get(i)[0], labelX, y);
-            Theme.drawRight(g2, rows.get(i)[1], valueRight, y);
-            y += lineHeight;
+            tetris.ui.theme.UiKit.paintButton(g2, isSelected, row.x, row.y, row.width, row.height,
+                    colorBlind, tetris.ui.theme.UiKit.pulse());
+            hits.add("row:" + i, row);
+            // 좌우 크리스털 캡을 피해 대칭 내부 영역에 글자를 배치한다
+            int capPad = Math.max(48, Math.min(64, row.width / 9));
+            java.awt.Rectangle inner = new java.awt.Rectangle(
+                    row.x + capPad, row.y + 3, Math.max(24, row.width - capPad * 2), Math.max(12, row.height - 6));
+            String value = rows.get(i)[1];
+            int font = Math.max(13, Math.min(16, unit));
+            g2.setFont(Theme.font(rows.get(i)[0], font, false));
+            g2.setColor(Color.WHITE);
+            tetris.ui.theme.UiKit.drawInBox(g2, rows.get(i)[0], inner, tetris.ui.theme.UiKit.Align.LEFT);
+            boolean isArrowKey = inControlKeys && ("←".equals(value) || "→".equals(value) || "↑".equals(value) || "↓".equals(value));
+            g2.setFont(Theme.font(value, isArrowKey ? font + 2 : font, false));
+            g2.setColor(isSelected ? Color.WHITE : new Color(0xD8EEFF));
+            tetris.ui.theme.UiKit.drawInBox(g2, value, inner, tetris.ui.theme.UiKit.Align.RIGHT);
+            if (value.startsWith("◀") && value.endsWith("▶")) {
+                int textWidth = tetris.ui.theme.GameTheme.width(g2, value);
+                int valueRight = inner.x + inner.width;
+                int valueLeft = valueRight - textWidth;
+                int arrow = Math.max(24, g2.getFontMetrics().stringWidth("◀") + pad);
+                hits.add("dec:" + i, valueLeft - 4, row.y, arrow, row.height);
+                hits.add("inc:" + i, valueRight - arrow + 4, row.y, arrow, row.height);
+            }
+            y += rowH;
         }
 
         if (!notice.isEmpty()) {
-            g2.setFont(Theme.text(Math.max(10, unit * 4 / 5), true));
+            int noticeW = Math.min(rowW, Math.max(260, w * 3 / 5));
+            int noticeH = Math.max(30, unit * 3 / 2);
+            int noticeX = (w - noticeW) / 2;
+            int noticeY = Math.min(h - guideReserve - noticeH - 4, y + 12);
+            g2.setColor(new Color(8, 12, 28, 215));
+            g2.fillRoundRect(noticeX, noticeY, noticeW, noticeH, 12, 12);
             g2.setColor(noticeIsError ? Theme.WARNING : Theme.ACCENT);
-            Theme.drawCentered(g2, notice, w / 2, y + unit);
+            g2.drawRoundRect(noticeX, noticeY, noticeW - 1, noticeH - 1, 12, 12);
+            g2.setFont(Theme.text(Math.max(13, unit * 4 / 5), false));
+            g2.setColor(noticeIsError ? Theme.WARNING : Theme.ACCENT);
+            String shown = noticeIsError && !notice.startsWith("⚠") ? "⚠ " + notice : notice;
+            tetris.ui.theme.UiKit.drawInBox(g2, shown,
+                    new java.awt.Rectangle(noticeX + 10, noticeY, noticeW - 20, noticeH), tetris.ui.theme.UiKit.Align.CENTER);
         }
 
         String guide = inControlKeys ? Messages.get("guide.controlKeys") : Messages.keyGuide(MainFrame.Screen.SETTINGS, null);
         Theme.drawGuide(g2, guide, w, h);
+    }
+
+    /** 왼쪽 위 뒤로 버튼. Esc와 같다(하위 화면이면 목록으로, 목록이면 메인 메뉴로). 마우스만으로도 나갈 수 있게 한다 */
+    private void paintBackButton(Graphics2D g2, int pad, int unit) {
+        java.awt.Rectangle box = new java.awt.Rectangle(pad * 2, pad * 2, Math.max(88, unit * 6), Math.max(30, unit * 2));
+        tetris.ui.theme.UiKit.paintButton(g2, false, box.x, box.y, box.width, box.height,
+                settings.isColorBlindMode(), tetris.ui.theme.UiKit.pulse());
+        g2.setFont(Theme.font("◀ 뒤로", Math.max(13, Math.min(15, unit)), false));
+        g2.setColor(Color.WHITE);
+        tetris.ui.theme.UiKit.drawInBox(g2, "◀ 뒤로", box, tetris.ui.theme.UiKit.Align.CENTER);
+        hits.add("back", box);
+    }
+
+    private static void paintHeading(Graphics2D g, String text, int size, int centerX, int baseline) {
+        java.awt.Font font = tetris.ui.theme.GameTheme.display(size);
+        g.setFont(font);
+        g.setColor(java.awt.Color.WHITE);
+        tetris.ui.theme.GameTheme.paintTitle(g, text, font, centerX, baseline, 0);
+    }
+
+    /** 테스트가 그린 사각형을 그대로 누른다 */
+    public String hitAt(int x, int y) {
+        return hits.hit(x, y);
+    }
+
+    private void hoverHit(String id) {
+        if (capturing != null || confirmDialog != null || id == null) return;
+        int index = hitIndex(id);
+        if (index >= 0 && index != selected) {
+            selected = index;
+            notice = "";
+            repaint();
+        }
+    }
+
+    private void clickHit(String id) {
+        if (capturing != null) {
+            cancelKeyCapture(); // "새 키를 누르세요" 대기 중 클릭은 Esc처럼 취소한다
+            return;
+        }
+        if (confirmDialog != null || id == null) return;
+        if ("back".equals(id)) {
+            back();
+            return;
+        }
+        int index = hitIndex(id);
+        if (index < 0) return;
+        selected = index;
+        if (id.startsWith("dec:")) changeValue(-1);
+        else if (id.startsWith("inc:")) changeValue(1);
+        else activateSelected();
+    }
+
+    private static int hitIndex(String id) {
+        int colon = id.indexOf(':');
+        if (colon < 0 || colon == id.length() - 1) return -1;
+        try {
+            return Integer.parseInt(id.substring(colon + 1));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     private List<String[]> settingRows() {
@@ -323,12 +467,20 @@ public class SettingPanel extends JPanel {
         for (Item item : items()) {
             rows.add(switch (item) {
                 case SCREEN_SIZE -> new String[] {Messages.get("settings.screenSize"),
-                        "◀ " + Messages.get("size." + settings.getScreenSize().name()) + " ▶"};
+                        "◀ " + screenSizeLabel() + " ▶"};
                 case DIFFICULTY -> new String[] {Messages.get("settings.difficulty"),
                         "◀ " + Messages.difficultyName(settings.getDifficulty()) + " ▶"};
-                case CONTROL_KEYS -> new String[] {Messages.get("settings.controlKeys"), "›"};
+                case CONTROL_KEYS -> new String[] {Messages.get("settings.controlKeys"), "설정 ▶"};
                 case COLOR_BLIND -> new String[] {Messages.get("settings.colorBlind"),
-                        Messages.get(settings.isColorBlindMode() ? "settings.on" : "settings.off")};
+                        settings.isColorBlindMode() ? "켬" : "끔"};
+                case CONTROL_STYLE -> new String[] {Messages.get("settings.controlStyle"),
+                        "◀ " + Messages.get("style." + settings.getControlStyle().name()) + " ▶"};
+                case EFFECTS -> new String[] {Messages.get("settings.effects"),
+                        "◀ " + Messages.get(settings.isEffectsHigh() ? "settings.effects.high" : "settings.effects.low") + " ▶"};
+                case SFX -> new String[] {Messages.get("settings.sfx"),
+                        Messages.get(settings.isSfxEnabled() ? "settings.enabled" : "settings.disabled")};
+                case BGM -> new String[] {Messages.get("settings.bgm"),
+                        Messages.get(settings.isBgmEnabled() ? "settings.enabled" : "settings.disabled")};
                 case DEV_NET_OVERLAY -> new String[] {Messages.get("settings.devNetOverlay"),
                         Messages.get(settings.isDevNetworkOverlay() ? "settings.on" : "settings.off")};
                 case RESET_SCOREBOARD -> new String[] {Messages.get("settings.resetScoreboard"), ""};

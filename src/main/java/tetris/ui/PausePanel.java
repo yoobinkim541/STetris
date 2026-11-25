@@ -8,9 +8,12 @@ import javax.swing.JPanel;
 
 /** Pause 오버레이: Resume / Restart / Quit to Main Menu (PAU-2). GamePanel 위에 겹쳐 그린다. */
 public class PausePanel extends JPanel {
+    /** 게임 화면 전체를 덮는 막. 전체 화면이면 Stage가 양옆에도 칠한다 */
+    static final java.awt.Color VEIL = new java.awt.Color(0, 0, 0, 230);
     private final List<MenuItem> items;
     private int selected;
     private String keyGuide = "";
+    private final tetris.ui.input.Hits hits = new tetris.ui.input.Hits();
 
     public PausePanel(Runnable onResume, Runnable onRestart, Runnable onQuit) {
         items = List.of(
@@ -18,6 +21,8 @@ public class PausePanel extends JPanel {
                 new MenuItem(Messages.get("pause.restart"), onRestart),
                 new MenuItem(Messages.get("pause.quit"), onQuit));
         setOpaque(false);
+        setFocusable(true);
+        tetris.ui.input.MenuMouse.install(this, hits, this::hoverHit, this::clickHit);
 
         KeyBindingManager.bindKey(this, KeyEvent.VK_UP, () -> moveSelection(-1));
         KeyBindingManager.bindKey(this, KeyEvent.VK_DOWN, () -> moveSelection(1));
@@ -53,18 +58,68 @@ public class PausePanel extends JPanel {
     protected void paintComponent(Graphics g) {
         Graphics2D g2 = Theme.smooth(g);
         int w = getWidth();
-        int unit = Theme.unit(getHeight());
-        int[] box = Theme.drawDialogBox(g2, w, getHeight(), Math.min(w - unit * 2, unit * 16), unit * 13);
-
-        g2.setFont(Theme.text(unit * 2, true));
-        g2.setColor(Theme.ACCENT);
-        Theme.drawCentered(g2, Messages.get("pause.title"), w / 2, box[1] + unit * 3);
+        int h = getHeight();
+        int unit = Theme.unit(h);
+        g2.setColor(VEIL);
+        g2.fillRect(0, 0, w, h);
+        int inset = tetris.ui.theme.GameTheme.snap8(Math.max(16, unit * 2));
+        int boxW = Math.min(w - inset * 2, tetris.ui.theme.GameTheme.snap8(unit * 18));
+        int boxH = Math.min(h - inset * 2, tetris.ui.theme.GameTheme.snap8(unit * 16));
+        int[] box = Theme.drawDialogBox(g2, w, h, boxW, boxH);
+        g2.setFont(tetris.ui.theme.GameTheme.display(Math.max(18, unit * 2)));
+        tetris.ui.theme.UiKit.drawInBox(g2, Messages.get("pause.title"),
+                new java.awt.Rectangle(box[0] + 8, box[1] + 8, box[2] - 16, Math.max(24, unit * 3)),
+                tetris.ui.theme.UiKit.Align.CENTER);
 
         List<String> labels = items.stream().map(MenuItem::label).toList();
-        Theme.drawMenu(g2, labels, selected, w / 2, box[1] + unit * 4 + unit / 2, unit + unit / 4);
+        int fontSize = Math.max(12, unit);
+        int buttonWidth = boxW - unit * 4;
+        int top = box[1] + unit * 4;
+        hits.begin(null);
+        int pillH = fontSize + fontSize / 2;
+        int pillGap = Math.max(8, (fontSize / 3 + 4) / 8 * 8);
+        int pillX = w / 2 - buttonWidth / 2;
+        for (int i = 0; i < labels.size(); i++) {
+            hits.add(Integer.toString(i), pillX, top + i * (pillH + pillGap), buttonWidth, pillH);
+        }
+        Theme.drawPills(g2, labels, selected, w / 2, top, fontSize, buttonWidth, false);
 
-        g2.setFont(Theme.text(Math.max(9, unit * 2 / 3), false));
-        g2.setColor(Theme.DIM_TEXT);
-        Theme.drawCentered(g2, keyGuide, w / 2, box[1] + box[3] - unit);
+        int guideW = Math.min(boxW - unit * 2, w - unit * 2);
+        int guideH = Math.max(28, unit * 2);
+        int guideX = (w - guideW) / 2;
+        int guideY = box[1] + box[3] - guideH - unit;
+        tetris.ui.theme.UiKit.paintCapsule(g2, guideX, guideY, guideW, guideH);
+        g2.setFont(Theme.text(Math.max(12, unit * 2 / 3), false));
+        g2.setColor(Theme.TEXT);
+        tetris.ui.theme.UiKit.drawInAsset(g2, tetris.ui.theme.UiKit.AssetSlot.CAPSULE,
+                new java.awt.Rectangle(guideX, guideY, guideW, guideH), keyGuide, tetris.ui.theme.UiKit.Align.CENTER);
+    }
+
+    public String hitAt(int x, int y) {
+        return hits.hit(x, y);
+    }
+
+    private void hoverHit(String id) {
+        int index = hitIndex(id);
+        if (index >= 0 && index != selected) {
+            selected = index;
+            repaint();
+        }
+    }
+
+    private void clickHit(String id) {
+        int index = hitIndex(id);
+        if (index < 0) return;
+        selected = index;
+        activateSelected();
+    }
+
+    private static int hitIndex(String id) {
+        if (id == null) return -1;
+        try {
+            return Integer.parseInt(id);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 }
