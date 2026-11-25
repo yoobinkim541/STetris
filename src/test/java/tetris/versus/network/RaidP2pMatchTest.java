@@ -111,14 +111,14 @@ class RaidP2pMatchTest {
         run(clientExec, () -> client.raidClient().orElseThrow()
                 .send(new PlayerCommand(PlayerId.ONE, GameAction.HARD_DROP, false, 0)));
         long readyDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
-        while (!call(hostExec, () -> ((HostRaidClient) host.raidClient().orElseThrow()).snapshot().introReadyFor(1))
+        while (!call(hostExec, () -> ((HostRaidClient) host.raidClient().orElseThrow()).snapshot().readyFor(1))
                 && System.nanoTime() < readyDeadline) {
             Thread.sleep(5);
             tick();
         }
         RaidSnapshot waiting = call(hostExec, () -> ((HostRaidClient) host.raidClient().orElseThrow()).snapshot());
         assertEquals(RaidPhase.BOSS_INTRO, waiting.phase(), mode + " 한 사람만 눌러서는 소개가 끝나지 않는다");
-        assertTrue(waiting.introReadyFor(1) && !waiting.introReadyFor(0), mode + " 클라이언트 입력은 P2 준비다");
+        assertTrue(waiting.readyFor(1) && !waiting.readyFor(0), mode + " 클라이언트 입력은 P2 준비다");
         // 호스트까지 누르면 카운트다운
         run(hostExec, () -> host.raidClient().orElseThrow()
                 .send(new PlayerCommand(PlayerId.ONE, GameAction.HARD_DROP, true, 0)));

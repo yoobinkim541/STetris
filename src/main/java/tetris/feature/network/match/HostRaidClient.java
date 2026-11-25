@@ -163,7 +163,7 @@ public final class HostRaidClient implements RaidClient {
         return new RaidSnapshot(matchId, snapshot.revision(), snapshot.mode(), snapshot.phase(), snapshot.boss(),
                 snapshot.players(), snapshot.kills(), snapshot.elapsedMillis(), snapshot.gauge(), snapshot.offer(),
                 snapshot.events(), snapshot.result(), snapshot.raceBosses(), snapshot.raceKills(), snapshot.raceGauges(),
-                snapshot.introMillis(), snapshot.introReady());
+                snapshot.introMillis(), snapshot.ready());
     }
 
     public RaidSnapshot snapshot() {

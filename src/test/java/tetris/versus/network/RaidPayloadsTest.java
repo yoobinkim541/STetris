@@ -79,7 +79,7 @@ class RaidPayloadsTest {
         engine.advance(tetris.feature.raid.RaidRules.INTRO_SPIN_MILLIS + 1);
         RaidSnapshot ready = RaidPayloads.readState(overWire(RaidPayloads.stateMessage(engine.snapshot())));
         assertEquals(RaidPhase.BOSS_INTRO, ready.phase(), "한 사람만 준비하면 소개가 이어진다");
-        assertTrue(ready.introReadyFor(1) && !ready.introReadyFor(0), "누가 준비했는지 상대 화면에도 보인다");
+        assertTrue(ready.readyFor(1) && !ready.readyFor(0), "누가 준비했는지 상대 화면에도 보인다");
         engine.close();
 
         RaidSnapshot picking = tetris.ui.raid.RaidSamples.phase(RaidMode.COOP, RaidPhase.CARD_PICK);
@@ -90,6 +90,18 @@ class RaidPayloadsTest {
         RaidSnapshot.CardOffer crossed = RaidPayloads.readState(overWire(RaidPayloads.stateMessage(withPick))).offer();
         assertArrayEquals(new int[] {2, -1}, crossed.picks());
         assertEquals(-1, crossed.remainingMillis());
+    }
+
+    @Test
+    void creditsPhaseAndWhoPressedContinueCrossTheWire() throws Exception {
+        RaidSnapshot base = tetris.ui.raid.RaidSamples.phase(RaidMode.COOP, RaidPhase.PLAYING);
+        RaidSnapshot credits = new RaidSnapshot(base.raidId(), base.revision(), base.mode(), RaidPhase.CREDITS, base.boss(),
+                base.players(), 4, base.elapsedMillis(), base.gauge(), null, List.of(), null,
+                List.of(), new int[0], new int[0], 0, new boolean[] {true, false});
+        RaidSnapshot read = RaidPayloads.readState(overWire(RaidPayloads.stateMessage(credits)));
+        assertEquals(RaidPhase.CREDITS, read.phase());
+        assertEquals(4, read.kills());
+        assertTrue(read.readyFor(0) && !read.readyFor(1), "누가 계속을 눌렀는지 상대 화면에도 보인다");
     }
 
     private static Message overWire(Message message) throws Exception {

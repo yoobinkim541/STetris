@@ -12,6 +12,8 @@ public final class RaidRules {
     public static final long INTRO_MILLIS = INTRO_SPIN_MILLIS + INTRO_INFO_MILLIS;
     /** 보상 카드 고르는 시간. 5초는 솔로에서 카드 3장을 읽기에 짧아 10초로 늘렸다 */
     public static final long CARD_PICK_MILLIS = 10_000;
+    /** 엔딩 크레딧을 넘길 수 있기까지 최소 시간. 하드 드롭을 연타하던 중에 4번째 보스가 쓰러져도 크레딧이 한순간에 지나가지 않게 */
+    public static final long CREDITS_MIN_MILLIS = 3_000;
     public static final long SYNC_MILLIS = 2_000;
     public static final long ULTIMATE_WINDOW_MILLIS = 1_500;
     public static final long AGGRO_WINDOW_MILLIS = 30_000;

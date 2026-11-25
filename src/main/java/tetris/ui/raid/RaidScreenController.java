@@ -75,7 +75,8 @@ public final class RaidScreenController implements AutoCloseable {
         panel.setConfirmAction(this::cancelConfirm);
         panel.setPauseActions(this::togglePause, this::beginQuit);
         panel.setCardPointer(this::onCardPointer);
-        panel.setIntroControls(introHint(solo, soloKeys, onlineViewer != null), () -> skipIntro(skipAs));
+        panel.setIntroControls(introHint(solo, soloKeys, onlineViewer != null), () -> sendReady(skipAs));
+        panel.setCreditsControls(creditsHint(solo, soloKeys, onlineViewer != null), () -> sendReady(skipAs), this::beginQuit);
         try {
             if (onlineViewer != null) {
                 battleRouter = new BattleInputRouter(root, BattleKeyMap.online(), this::onCommand, this::accepts);
@@ -166,7 +167,7 @@ public final class RaidScreenController implements AutoCloseable {
             return action == GameAction.MOVE_LEFT || action == GameAction.MOVE_RIGHT
                     || action == GameAction.HARD_DROP || action == GameAction.QUIT;
         }
-        if (current.phase() == RaidPhase.BOSS_INTRO) {
+        if (current.phase() == RaidPhase.BOSS_INTRO || current.phase() == RaidPhase.CREDITS) {
             return action == GameAction.HARD_DROP || action == GameAction.PAUSE || action == GameAction.QUIT;
         }
         if (action == GameAction.PAUSE || action == GameAction.QUIT) return true;
@@ -271,28 +272,37 @@ public final class RaidScreenController implements AutoCloseable {
             panel.activateResult();
             return;
         }
-        if (current != null && current.phase() == RaidPhase.BOSS_INTRO) {
-            skipIntro(solo ? PlayerId.ONE : PlayerId.TWO); // 한 화면 협동에서 Enter는 P2 키다
+        if (current != null && (current.phase() == RaidPhase.BOSS_INTRO || current.phase() == RaidPhase.CREDITS)) {
+            sendReady(solo ? PlayerId.ONE : PlayerId.TWO); // 한 화면 협동에서 Enter는 P2 키다
             return;
         }
         if (!solo && current != null && current.phase() == RaidPhase.PLAYING) client.ultimate(PlayerId.TWO);
     }
 
     /**
-     * 소개 건너뛰기. 클릭은 온라인이면 이 PC의 참가자, 한 화면이면 P1이고, Enter는 P2다.
-     * 한 사람이 같은 입력을 두 번 눌러 두 사람 몫의 준비를 채우지 못한다. 룰렛 중에는 엔진이 무시한다
+     * 보스 소개 건너뛰기·엔딩 크레딧 계속. 클릭은 온라인이면 이 PC의 참가자, 한 화면이면 P1이고, Enter는 P2다.
+     * 한 사람이 같은 입력을 두 번 눌러 두 사람 몫을 채우지 못한다. 룰렛 중에는 엔진이 무시한다
      */
-    private void skipIntro(PlayerId who) {
-        if (closed || confirming || current == null || current.phase() != RaidPhase.BOSS_INTRO) return;
+    private void sendReady(PlayerId who) {
+        if (closed || confirming || current == null) return;
+        if (current.phase() != RaidPhase.BOSS_INTRO && current.phase() != RaidPhase.CREDITS) return;
         client.send(new PlayerCommand(who, GameAction.HARD_DROP, true, sequence++));
         client.send(new PlayerCommand(who, GameAction.HARD_DROP, false, sequence++));
     }
 
     static String introHint(boolean solo, KeyMap keys, boolean online) {
-        if (online) return "두 사람 모두 하드 드롭을 누르면 바로 시작";
-        if (!solo) return "두 사람 모두 하드 드롭(또는 Enter)을 누르면 바로 시작";
+        return readyHint(solo, keys, online, "바로 시작");
+    }
+
+    static String creditsHint(boolean solo, KeyMap keys, boolean online) {
+        return readyHint(solo, keys, online, "계속 (다음 보스와 보상 카드)");
+    }
+
+    private static String readyHint(boolean solo, KeyMap keys, boolean online, String what) {
+        if (online) return "두 사람 모두 하드 드롭을 누르면 " + what;
+        if (!solo) return "두 사람 모두 하드 드롭(또는 Enter)을 누르면 " + what;
         KeyMap map = keys == null ? new KeyMap() : keys;
-        return Messages.keyName(map, GameAction.HARD_DROP) + " 또는 Enter로 바로 시작";
+        return Messages.keyName(map, GameAction.HARD_DROP) + " 또는 Enter로 " + what;
     }
 
     private void beginQuit() {

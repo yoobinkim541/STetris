@@ -101,6 +101,15 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
     private Runnable onResume = () -> { };
     private Runnable onQuit = () -> { };
     private int pauseHover = -1;
+    private Rectangle creditsContinue = new Rectangle();
+    private Rectangle creditsEnd = new Rectangle();
+    private Runnable onCreditsContinue = () -> { };
+    private Runnable onCreditsEnd = () -> { };
+    private String creditsHint = "하드 드롭 또는 Enter로 계속";
+    private int creditsHover = -1;
+    /** 크레딧이 올라가기 시작한 시각. 엔딩에 들어올 때 정한다 */
+    private long creditsAnchor;
+    private static final int CREDITS_PIXELS_PER_SECOND = 40;
     private final Rectangle cueTarget = new Rectangle();
     private final Rectangle cueLucky = new Rectangle();
     private final Rectangle cueScore = new Rectangle();
@@ -146,6 +155,10 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         this.snapshot = snapshot;
         if (snapshot != null && snapshot.phase() == RaidPhase.COUNTDOWN && previous != RaidPhase.COUNTDOWN) {
             countdownAnchor = System.currentTimeMillis();
+        }
+        if (snapshot != null && snapshot.phase() == RaidPhase.CREDITS && previous != RaidPhase.CREDITS
+                && previous != RaidPhase.PAUSED) {
+            creditsAnchor = System.currentTimeMillis();
         }
         boolean changed = snapshot != null && snapshot.revision() != lastRevision;
         if (changed) {
@@ -293,6 +306,11 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
             if (BossRoulette.revealed(snapshot.introMillis())) onSkipIntro.run();
             return;
         }
+        if (snapshot.phase() == RaidPhase.CREDITS && !confirming) {
+            if (creditsContinue.contains(vx, vy)) onCreditsContinue.run();
+            else if (creditsEnd.contains(vx, vy)) onCreditsEnd.run();
+            return;
+        }
         if (snapshot.phase() == RaidPhase.FINISHED) {
             if (menuButton.contains(vx, vy)) {
                 resultIndex = 0;
@@ -342,6 +360,13 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
             }
         } else if (confirming) {
             hand = menuButton.contains(vx, vy) || retryButton.contains(vx, vy);
+        } else if (snapshot.phase() == RaidPhase.CREDITS) {
+            int hit = creditsContinue.contains(vx, vy) ? 0 : creditsEnd.contains(vx, vy) ? 1 : -1;
+            hand = hit >= 0;
+            if (hit != creditsHover) {
+                creditsHover = hit;
+                repaint();
+            }
         } else if (snapshot.phase() == RaidPhase.PAUSED) {
             int hit = resumeButton.contains(vx, vy) ? 0 : quitButton.contains(vx, vy) ? 1 : -1;
             hand = hit >= 0;
@@ -679,7 +704,8 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         fx.paintSparks(g);
         if (scene.players > 0) fx.paintNumbers(g, centers, scene.play[0].y + 28);
         fx.paintBossNumbers(g, scene.boss.x + scene.boss.width / 2, scene.boss.y + scene.boss.height / 3);
-        if (snapshot.phase() != RaidPhase.CARD_PICK && snapshot.phase() != RaidPhase.FINISHED && scene.banner.width > 0) {
+        if (snapshot.phase() != RaidPhase.CARD_PICK && snapshot.phase() != RaidPhase.CREDITS
+                && snapshot.phase() != RaidPhase.FINISHED && scene.banner.width > 0) {
             fx.paintBanner(g, VW / 2, scene.banner.y + scene.banner.height / 2);
         }
         if (snapshot.phase() == RaidPhase.PLAYING || snapshot.phase() == RaidPhase.PAUSED) {
@@ -691,6 +717,7 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         if (snapshot.phase() == RaidPhase.PAUSED && !confirming) paintPause(g);
         if (snapshot.phase() == RaidPhase.CARD_PICK && snapshot.offer() != null) paintCards(g);
         if (snapshot.phase() == RaidPhase.BOSS_INTRO) paintIntro(g);
+        if (snapshot.phase() == RaidPhase.CREDITS) paintCredits(g);
         if (confirming) paintConfirm(g);
         if (snapshot.phase() == RaidPhase.FINISHED && snapshot.result() != null) paintResult(g);
         markBoss();
@@ -1861,15 +1888,114 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         g.setColor(TEXT);
         UiKit.drawCentered(g, footer, VW / 2, barY + (pair ? 26 : 34));
         if (pair) {
-            String ready = readyText(0) + "   ·   " + readyText(1);
+            String ready = readyText(0, "준비 완료 ✓", "읽는 중") + "   ·   " + readyText(1, "준비 완료 ✓", "읽는 중");
             g.setFont(GameTheme.fontFor(ready, 13, true));
             g.setColor(colorBlind ? A11yColors.YELLOW : new Color(0xFFE27A));
             UiKit.drawCentered(g, ready, VW / 2, barY + 46);
         }
     }
 
-    private String readyText(int player) {
-        return "P" + (player + 1) + (snapshot.introReadyFor(player) ? " 준비 완료 ✓" : " 읽는 중");
+    private String readyText(int player, String done, String waiting) {
+        return "P" + (player + 1) + " " + (snapshot.readyFor(player) ? done : waiting);
+    }
+
+    /** 엔딩 크레딧의 계속·끝내기 버튼과 아래 안내. 계속은 키와 같은 일을 한다 */
+    public void setCreditsControls(String hint, Runnable keepPlaying, Runnable end) {
+        creditsHint = hint == null || hint.isBlank() ? "하드 드롭 또는 Enter로 계속" : hint;
+        onCreditsContinue = keepPlaying == null ? () -> { } : keepPlaying;
+        onCreditsEnd = end == null ? () -> { } : end;
+    }
+
+    /** 엔딩 크레딧: 화면을 덮고 만든 사람들이 아래에서 위로 올라간다. 아래에 계속·끝내기와(둘이면) 누가 계속을 눌렀는지 */
+    private void paintCredits(Graphics2D g) {
+        Color veilColor = new Color(4, 6, 16, 240);
+        fillScreen(g, veilColor);
+        Color accent = colorBlind ? A11yColors.YELLOW : new Color(0xFFE27A);
+        g.setFont(GameTheme.display(30));
+        g.setColor(accent);
+        GameTheme.drawCentered(g, "축하합니다!", VW / 2, 60);
+        g.setFont(GameTheme.text(15, false));
+        g.setColor(TEXT);
+        UiKit.drawCentered(g, "보스 4종을 모두 물리쳤습니다", VW / 2, 88);
+
+        int top = 108;
+        int bottom = VH - 178;
+        int total = 0;
+        for (EndingCredits.Line line : EndingCredits.LINES) total += creditHeight(line.kind());
+        long elapsed = Math.max(0, System.currentTimeMillis() - creditsAnchor);
+        int travel = (bottom - top) + total;
+        int y = bottom - (int) ((elapsed * CREDITS_PIXELS_PER_SECOND / 1000) % travel);
+        java.awt.Shape clip = g.getClip();
+        g.clipRect(0, top, VW, bottom - top);
+        for (EndingCredits.Line line : EndingCredits.LINES) {
+            int h = creditHeight(line.kind());
+            if (y + h > top && y < bottom) paintCreditLine(g, line, y + h - 8, accent);
+            y += h;
+        }
+        g.setClip(clip);
+        // 위아래 가장자리는 서서히 사라지게
+        g.setPaint(new java.awt.GradientPaint(0, top, veilColor, 0, top + 28, new Color(4, 6, 16, 0)));
+        g.fillRect(0, top, VW, 28);
+        g.setPaint(new java.awt.GradientPaint(0, bottom - 28, new Color(4, 6, 16, 0), 0, bottom, veilColor));
+        g.fillRect(0, bottom - 28, VW, 28);
+
+        if (snapshot.players().size() > 1) {
+            String ready = readyText(0, "계속 ✓", "보는 중") + "   ·   " + readyText(1, "계속 ✓", "보는 중");
+            g.setFont(GameTheme.fontFor(ready, 14, true));
+            g.setColor(accent);
+            UiKit.drawCentered(g, ready, VW / 2, VH - 148);
+        }
+        creditsContinue = new Rectangle(VW / 2 - 196, VH - 128, 180, 44);
+        creditsEnd = new Rectangle(VW / 2 + 16, VH - 128, 180, 44);
+        paintChoice(g, creditsContinue, "계속하기", creditsHover != 1);
+        paintChoice(g, creditsEnd, "끝내기", creditsHover == 1);
+        long waitLeft = RaidRules.CREDITS_MIN_MILLIS - elapsed;
+        String hint = waitLeft > 0 ? "잠시 감상해 주세요 · " + (waitLeft + 999) / 1000 + "초 뒤 계속할 수 있습니다" : creditsHint;
+        g.setFont(GameTheme.fontFor(hint, 13, false));
+        g.setColor(DIM);
+        UiKit.drawCentered(g, hint, VW / 2, VH - 58);
+    }
+
+    private static int creditHeight(EndingCredits.Kind kind) {
+        return switch (kind) {
+            case TITLE -> 56;
+            case SUBTITLE -> 36;
+            case SECTION -> 40;
+            case NAME -> 34;
+            case TEXT -> 24;
+            case GAP -> 20;
+        };
+    }
+
+    private void paintCreditLine(Graphics2D g, EndingCredits.Line line, int baseline, Color accent) {
+        switch (line.kind()) {
+            case TITLE -> {
+                g.setFont(GameTheme.display(44));
+                g.setColor(TEXT);
+                GameTheme.drawCentered(g, line.text(), VW / 2, baseline);
+            }
+            case SUBTITLE -> {
+                g.setFont(GameTheme.fontFor(line.text(), 20, true));
+                g.setColor(TEXT);
+                UiKit.drawCentered(g, line.text(), VW / 2, baseline);
+            }
+            case SECTION -> {
+                g.setFont(GameTheme.fontFor(line.text(), 17, true));
+                g.setColor(accent);
+                UiKit.drawCentered(g, line.text(), VW / 2, baseline);
+            }
+            case NAME -> {
+                g.setFont(GameTheme.fontFor(line.text(), 19, true));
+                g.setColor(colorBlind ? A11yColors.SKY : UiKit.CYAN);
+                UiKit.drawCentered(g, line.text(), VW / 2, baseline);
+            }
+            case TEXT -> {
+                g.setFont(GameTheme.fontFor(line.text(), 14, false));
+                g.setColor(TEXT);
+                UiKit.drawCentered(g, line.text(), VW / 2, baseline);
+            }
+            case GAP -> { }
+        }
     }
 
     private void paintPatternRow(Graphics2D g, PatternId pattern, boolean signature, int level, int x, int y, int w) {
