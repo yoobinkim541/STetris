@@ -165,7 +165,7 @@ public final class RaidCapture {
         var boss = new RaidSnapshot.BossView(BossId.NIGHT_WITCH, 2, 260, 400, PatternId.CLOUD,
                 0, 4, new int[0], -1);
         var fighter = new RaidSnapshot.PlayerView(RaidSamples.board(), true, new int[20][10],
-                List.of(new RaidSnapshot.Effect(PatternId.CLOUD, 4, new int[] {6, 1, 8, 8})),
+                List.of(new RaidSnapshot.Effect(PatternId.CLOUD, 4, new int[] {16, 0, 4, 3})),
                 0, 8, 640);
         return new RaidSnapshot("raid-preview", 11, RaidMode.COOP, RaidPhase.PLAYING, boss,
                 List.of(fighter, RaidSamples.fighter(false)), 2, 80_000L, 40, null, List.of(), null);
