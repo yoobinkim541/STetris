@@ -53,7 +53,12 @@ public class BagBlockGenerator implements BlockGenerator {
         }
         this.rounds = Math.max(1, total / TYPES_PER_ROUND);
         this.random = random;
-        for (BlockType type : counts.keySet()) offsets.put(type, random.nextInt(rounds));
+        // 시작 위치를 종류마다 따로 뽑으면 여러 종류의 남는 몫이 한 묶음에 몰려 묶음 크기가 1~13까지 벌어진다.
+        // 순서만 섞고 시작 위치는 고르게 떨어뜨려, 종류마다 하나씩인 남는 몫(빠지는 묶음)이 서로 겹치지 않게 한다 (EASY/HARD 묶음 6~8개)
+        List<BlockType> order = new ArrayList<>(counts.keySet());
+        Collections.shuffle(order, random);
+        int start = random.nextInt(rounds);
+        for (int j = 0; j < order.size(); j++) offsets.put(order.get(j), (start + j * rounds / order.size()) % rounds);
     }
 
     @Override

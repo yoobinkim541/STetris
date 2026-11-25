@@ -11,7 +11,7 @@
 | 규칙 ID | 인수 조건 | 직접 검증 |
 |---|---|---|
 | DIF-1/2/3/5 | 난이도 선택·저장·일반 게임 적용·판 중 고정 | RequirementsDataAuditTest, RequirementsVisualAuditTest, ProductionWiringAuditTest |
-| GEN-4 | 실제 게임에서 난이도별 가중치 생성기 사용 | WeightedBlockGeneratorTest, ProductionWiringAuditTest |
+| GEN-4 | 실제 게임에서 난이도별 가중치 생성기 사용 | BagBlockGeneratorTest, WeightedBlockGeneratorTest, ProductionWiringAuditTest |
 | MOD-2/4 | ITEM은 NORMAL, 다음 아이템·D/S 잔여 수 표시 | ItemPendingTest, RequirementsVisualAuditTest |
 | ANI-2/5 | CLEARING 입력 정지·150ms·흰색 칸 표시·Pause 유지 | ClearingAnimationTest, RequirementsVisualAuditTest |
 | SBD-2-1 | 네 분류 각각 Top 10·동점 뒤 삽입·재실행 보존 | ScoreboardCategoryTest, RequirementsDataAuditTest |
@@ -31,22 +31,23 @@
 | NORMAL | 30 | 30 | 100ms |
 | HARD | 24 | 31 | 120ms |
 
-실제 게임은 WeightedBlockGenerator를 사용한다. 난이도별 간격 하한은 EASY 400ms / NORMAL 300ms / HARD 250ms이며 계산은 기존 LevelPolicy/Difficulty에 위임한다. settings.json은 difficulty 문자열을 저장한다. 필드가 없는 기존 파일은 NORMAL이며 무효 필드는 경고 후 NORMAL로 대체하고 다른 설정은 살린다.
+실제 게임(일반·아이템·로컬 대전·레이드)은 가중치 7-bag `BagBlockGenerator`를 사용한다(v1.2 BLK-2, 2026-11-20 변경). 210개 주머니마다 위 가중치 개수를 정확히 담고, NORMAL은 표준 7-bag이다. `WeightedBlockGenerator`(독립 가중 추출)는 같은 가중치의 기준 구현으로 남는다. 난이도별 간격 하한은 EASY 400ms / NORMAL 300ms / HARD 250ms이며 계산은 기존 LevelPolicy/Difficulty에 위임한다. settings.json은 difficulty 문자열을 저장한다. 필드가 없는 기존 파일은 NORMAL이며 무효 필드는 경고 후 NORMAL로 대체하고 다른 설정은 살린다.
 
 ### 평가 체크리스트 2-18~2-21: 확률 단위 테스트
 
-`src/test/java/tetris/feature/WeightedBlockGeneratorTest.java`는 실제 게임이 사용하는 생성기를 고정 시드로 10,000회 호출하고 7종 각각의 관측 비율과 기대 비율 차이가 ±5%p 이내인지 검사한다. 테스트 보고서의 표시 이름에 요구사항 번호를 포함한다.
+`src/test/java/tetris/feature/BagBlockGeneratorTest.java`는 실제 게임이 사용하는 생성기를 검사한다. `실제_게임_생성기의_분포는_요구사항의_확률과_일치한다`는 10개 시드 × 난이도별 10,000회 생성 결과를 요구사항 확률과 7종 모두 ±2%p 이내로 비교하고, `EASY_HARD는_주머니마다_가중치를_정확히_지킨다`는 210개 주머니마다 I 36·24개, 나머지 29·31개를 정확히 확인한다. `src/test/java/tetris/feature/WeightedBlockGeneratorTest.java`는 같은 가중치를 독립 추출하는 기준 구현을 고정 시드로 10,000회 호출하고 7종 각각의 관측 비율과 기대 비율 차이가 ±5%p 이내인지 검사한다. 테스트 보고서의 표시 이름에 요구사항 번호를 포함한다.
 
 | 체크리스트 | 테스트 메서드 | 기대 분포 |
 |---|---|---|
 | 2-18 Normal 무작위 / 2-21 단위 테스트 | `NORMAL은_7종_모두_같은_비율` | 각 10/70 = 1/7 |
 | 2-19 Easy I 증가 / 2-21 단위 테스트 | `EASY_I는_36_나머지는_29_비율로_나온다` | I 36/210 = 6/35 ≈ 17.14%, 나머지 각각 29/210 |
 | 2-20 Hard I 감소 / 2-21 단위 테스트 | `HARD_I는_24_나머지는_31_비율로_나온다` | I 24/210 = 4/35 ≈ 11.43%, 나머지 각각 31/210 |
+| 2-18~2-21 실제 게임 생성기 | `BagBlockGeneratorTest.실제_게임_생성기의_분포는_요구사항의_확률과_일치한다`, `EASY_HARD는_주머니마다_가중치를_정확히_지킨다` | 위 세 분포, 210개 주머니마다 정확한 개수 |
 
 ±20%는 Normal의 실제 I 출현 확률 1/7에 대한 상대 변화다. 합계 210의 정수 가중치로 정확히 1.2배/0.8배를 구현한다. `I_확률은_Normal_대비_정확히_20퍼센트_증감한다`는 가중치에서 계산한 확률을 독립 기대값 1/7·1.2/7·0.8/7과 엄밀히 비교한다. `실제_생성_분포는_요구사항의_확률과_일치한다`는 구현 가중치에서 기대값을 재계산하지 않고 요구사항의 확률로 10개 시드 × 난이도별 10,000회 생성 결과를 7종 모두 ±2%p 이내로 검사한다. 나머지 6종의 확률은 각 난이도에서 균등하며 총합은 1이다.
 
 ```powershell
-.\gradlew.bat test --tests tetris.feature.WeightedBlockGeneratorTest --tests tetris.feature.WeightedRandomTest --no-daemon
+.\gradlew.bat test --tests tetris.feature.BagBlockGeneratorTest --tests tetris.feature.WeightedBlockGeneratorTest --tests tetris.feature.WeightedRandomTest --no-daemon
 ```
 
 보조 `WeightedRandomTest`는 A:B:C:D = 1:2:1:1에서 20%:40%:20%:20% 분포, 여러 시드, 가중치 0 및 잘못된 가중치를 검증한다.
