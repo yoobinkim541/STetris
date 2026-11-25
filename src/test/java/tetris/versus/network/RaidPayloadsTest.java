@@ -92,6 +92,18 @@ class RaidPayloadsTest {
         assertEquals(-1, crossed.remainingMillis());
     }
 
+    @Test
+    void creditsPhaseAndWhoPressedContinueCrossTheWire() throws Exception {
+        RaidSnapshot base = tetris.ui.raid.RaidSamples.phase(RaidMode.COOP, RaidPhase.PLAYING);
+        RaidSnapshot credits = new RaidSnapshot(base.raidId(), base.revision(), base.mode(), RaidPhase.CREDITS, base.boss(),
+                base.players(), 4, base.elapsedMillis(), base.gauge(), null, List.of(), null,
+                List.of(), new int[0], new int[0], 0, new boolean[] {true, false});
+        RaidSnapshot read = RaidPayloads.readState(overWire(RaidPayloads.stateMessage(credits)));
+        assertEquals(RaidPhase.CREDITS, read.phase());
+        assertEquals(4, read.kills());
+        assertTrue(read.readyFor(0) && !read.readyFor(1), "누가 계속을 눌렀는지 상대 화면에도 보인다");
+    }
+
     private static Message overWire(Message message) throws Exception {
         byte[] frame = new FrameEncoder().encode(message);
         return new FrameDecoder().feed(frame, 0, frame.length).get(0);

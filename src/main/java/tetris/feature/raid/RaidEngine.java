@@ -113,6 +113,8 @@ public final class RaidEngine {
     /** 일반 보스 수 (황금 테트로 제외). 이만큼 종류를 다 잡으면 엔딩 */
     private static final int REGULAR_BOSSES = BossId.values().length - 1;
     private long offerLeft;
+    /** 엔딩 크레딧을 띄운 뒤 흐른 시간(일시정지 제외). 최소 시간이 지나야 계속을 받는다 */
+    private long creditsFor;
     private List<CardId> offer;
     private RaidSnapshot.Result result;
     private Lane[] lanes;
@@ -213,6 +215,8 @@ public final class RaidEngine {
                 countdownLeft -= dt;
             } else if (phase == RaidPhase.CARD_PICK) {
                 offerLeft -= dt;
+            } else if (phase == RaidPhase.CREDITS) {
+                creditsFor += dt;
             }
         }
         if (phase == RaidPhase.PLAYING && config.mode() == RaidMode.RACE && lanes != null && dt > 0
@@ -312,8 +316,8 @@ public final class RaidEngine {
                 continue;
             }
             if (phase == RaidPhase.CREDITS) {
-                // 엔딩 크레딧은 제한 시간 없이 모두 계속을 누르면 보상 카드로 넘어간다
-                if (action == GameAction.HARD_DROP) {
+                // 엔딩 크레딧은 최소 시간이 지난 뒤 모두 계속을 누르면 보상 카드로 넘어간다. 그 전 입력은 버린다
+                if (action == GameAction.HARD_DROP && creditsFor >= RaidRules.CREDITS_MIN_MILLIS) {
                     ready[i] = true;
                     if (allReady()) beginOffer();
                 }
@@ -514,6 +518,7 @@ public final class RaidEngine {
             if (session.getState() == GameState.PLAYING || session.getState() == GameState.CLEARING) session.pause();
         }
         ready = new boolean[count];
+        creditsFor = 0;
         phase = RaidPhase.CREDITS;
     }
 

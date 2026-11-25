@@ -230,6 +230,12 @@ class RaidEngineTest {
                 creditsSeen++;
                 assertEquals(4, beaten.size(), "보스 4종을 다 잡았을 때만 엔딩: " + beaten);
                 harness.drop(0);
+                harness.drop(0);
+                assertEquals(RaidPhase.CREDITS, harness.engine.snapshot().phase(),
+                        "보스를 잡은 직후 하드 드롭을 연타해도 크레딧이 한순간에 지나가지 않는다");
+                harness.now += RaidRules.CREDITS_MIN_MILLIS;
+                harness.engine.advance(harness.now);
+                harness.drop(0);
                 assertEquals(RaidPhase.CARD_PICK, harness.engine.snapshot().phase(), "크레딧 뒤에는 평소처럼 보상 카드");
                 continue;
             }

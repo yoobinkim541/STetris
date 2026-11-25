@@ -1949,9 +1949,11 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         creditsEnd = new Rectangle(VW / 2 + 16, VH - 128, 180, 44);
         paintChoice(g, creditsContinue, "계속하기", creditsHover != 1);
         paintChoice(g, creditsEnd, "끝내기", creditsHover == 1);
-        g.setFont(GameTheme.fontFor(creditsHint, 13, false));
+        long waitLeft = RaidRules.CREDITS_MIN_MILLIS - elapsed;
+        String hint = waitLeft > 0 ? "잠시 감상해 주세요 · " + (waitLeft + 999) / 1000 + "초 뒤 계속할 수 있습니다" : creditsHint;
+        g.setFont(GameTheme.fontFor(hint, 13, false));
         g.setColor(DIM);
-        UiKit.drawCentered(g, creditsHint, VW / 2, VH - 58);
+        UiKit.drawCentered(g, hint, VW / 2, VH - 58);
     }
 
     private static int creditHeight(EndingCredits.Kind kind) {

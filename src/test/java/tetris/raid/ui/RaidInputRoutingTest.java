@@ -137,6 +137,39 @@ class RaidInputRoutingTest {
         });
     }
 
+    /** 엔딩 크레딧: 한 화면 협동은 클릭=P1·Enter=P2, 끝내기는 종료 확인, 온라인 손님의 Space도 계속으로 보낸다 */
+    @Test
+    void creditsInputsRouteToTheRightPlayer() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane root = new JRootPane();
+            FakeRaidClient local = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.CREDITS));
+            RaidPanel panel = new RaidPanel(false);
+            try (var ignored = new RaidScreenController(root, local, panel, new KeyMap(), false, ControlStyle.MODERN,
+                    () -> { }, () -> { })) {
+                Runnable keepPlaying = (Runnable) field(panel, "onCreditsContinue");
+                keepPlaying.run();
+                keepPlaying.run();
+                key(root, KeyEvent.VK_ENTER);
+                key(root, KeyEvent.VK_ENTER);
+                List<PlayerId> pressedBy = local.sent().stream()
+                        .filter(c -> c.action() == tetris.feature.setting.GameAction.HARD_DROP && c.pressed())
+                        .map(c -> c.playerId()).toList();
+                assertEquals(List.of(PlayerId.ONE, PlayerId.ONE, PlayerId.TWO, PlayerId.TWO), pressedBy,
+                        "계속 버튼은 P1, Enter는 P2 몫이라 한 사람이 둘 몫을 채우지 못한다");
+                ((Runnable) field(panel, "onCreditsEnd")).run();
+                assertTrue((boolean) field(panel, "confirming"), "끝내기는 레이드 종료 확인을 띄운다");
+            }
+
+            FakeRaidClient guest = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.CREDITS));
+            try (var ignored = RaidScreenController.online(root, guest, new RaidPanel(false), PlayerId.TWO,
+                    ControlStyle.MODERN, () -> { }, () -> { })) {
+                key(root, KeyEvent.VK_SPACE);
+                assertTrue(guest.sent().stream().anyMatch(c -> c.action() == tetris.feature.setting.GameAction.HARD_DROP
+                        && c.pressed()), "손님의 Space는 크레딧 계속으로 보낸다");
+            }
+        });
+    }
+
     private static Object field(Object owner, String name) {
         try {
             var found = owner.getClass().getDeclaredField(name);
