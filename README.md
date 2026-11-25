@@ -10,7 +10,7 @@ Java 21 · Swing · 일반 / 아이템 / 대전 / 온라인 / 보스 레이드
 ![Java 21](https://img.shields.io/badge/Java-21%2B-f89820)
 ![Windows](https://img.shields.io/badge/Windows-EXE%20%7C%20JAR-0078d4)
 
-### [▶ 게임 받기 (JAR)](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.5/SE-Tetris.jar) · [Windows 실행 파일 (ZIP)](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.5/SE-Tetris-windows.zip)
+### [▶ 게임 받기 (JAR)](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.6/SE-Tetris.jar) · [Windows 실행 파일 (ZIP)](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.6/SE-Tetris-windows.zip)
 
 <sub>JAR은 Java 21 이상에서 더블클릭, ZIP은 Java 없이 압축을 풀고 <code>SE Tetris.exe</code> 실행 · 기말 평가는 <a href="#평가-빌드-v050">평가 빌드 v0.5.0</a></sub>
 
@@ -171,7 +171,7 @@ flowchart LR
 
 | 빌드 | 받기 | 내용 |
 |---|---|---|
-| **챌린지 빌드** (최신) | [JAR](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.5/SE-Tetris.jar) · [Windows ZIP](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.5/SE-Tetris-windows.zip) · [릴리스](https://github.com/yoobinkim541/STetris/releases/tag/v0.6.0-challenge.5) | 이 페이지의 모든 기능 |
+| **챌린지 빌드** (최신) | [JAR](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.6/SE-Tetris.jar) · [Windows ZIP](https://github.com/yoobinkim541/STetris/releases/download/v0.6.0-challenge.6/SE-Tetris-windows.zip) · [릴리스](https://github.com/yoobinkim541/STetris/releases/tag/v0.6.0-challenge.6) | 이 페이지의 모든 기능 |
 | **평가 빌드** v0.5.0 | [JAR](https://github.com/yoobinkim541/STetris/releases/download/v0.5.0/SE-Tetris.jar) · [Windows ZIP](https://github.com/yoobinkim541/STetris/releases/download/v0.5.0/SE-Tetris-windows.zip) · [릴리스](https://github.com/yoobinkim541/STetris/releases/tag/v0.5.0) | 요구사항 3 기말 평가 제출본 (보스 레이드·인터넷 방 없음) |
 
 ```powershell

@@ -15,7 +15,6 @@ import java.awt.image.BufferedImage;
 import java.util.List;
 import java.util.function.BiConsumer;
 import javax.swing.JPanel;
-import tetris.component.block.BlockType;
 import tetris.feature.raid.BossRoulette;
 import tetris.feature.raid.RaidRules;
 import tetris.feature.raid.api.BossId;
@@ -26,13 +25,11 @@ import tetris.feature.raid.api.RaidMode;
 import tetris.feature.raid.api.RaidPhase;
 import tetris.feature.raid.api.RaidSnapshot;
 import tetris.feature.versus.api.VersusRules;
-import tetris.ui.BlockPalette;
 import tetris.ui.fx.A11yColors;
 import tetris.ui.fx.AssetStore;
 import tetris.ui.fx.FxLayer;
 import tetris.ui.fx.StarfieldBackground;
 import tetris.ui.theme.GameTheme;
-import tetris.ui.theme.GemTiles;
 import tetris.ui.theme.PieceFit;
 import tetris.ui.theme.UiKit;
 import tetris.ui.versus.BoardRenderer;
@@ -1158,7 +1155,6 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         PieceFit fit = PieceFit.of(shape, slot.x + inset, slot.y + inset,
                 Math.max(1, slot.width - inset * 2), Math.max(1, slot.height - inset * 2), scene.cell);
         if (fit.rows == 0 || fit.cell <= 0) return;
-        boolean letters = !colorBlind;
         Graphics2D layer = (Graphics2D) g.create();
         try {
             layer.clipRect(slot.x + 1, slot.y + 1, Math.max(1, slot.width - 2), Math.max(1, slot.height - 2));
@@ -1168,38 +1164,12 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
                     if (shape[r][c] == 0) continue;
                     int x = fit.originX + (c - fit.minCol) * fit.cell;
                     int y = fit.originY + (r - fit.minRow) * fit.cell;
-                    if (letters) boards.paintCell(layer, shape[r][c], x, y, fit.cell);
-                    else paintQuietCell(layer, shape[r][c], x, y, fit.cell);
+                    // 일반·아이템·대전 화면과 같은 보석 칸 + 글자 (색맹 모드도 같다)
+                    boards.paintCell(layer, shape[r][c], x, y, fit.cell);
                 }
             }
         } finally {
             layer.dispose();
-        }
-    }
-
-    private void paintQuietCell(Graphics2D g, int value, int x, int y, int size) {
-        if (size <= 0 || value <= 0) return;
-        BlockPalette palette = new BlockPalette();
-        Color fill = value == VersusRules.ATTACK_CELL ? new Color(0x929AA5)
-                : value <= BlockType.values().length ? palette.color(BlockType.values()[value - 1], colorBlind)
-                : new Color(0x929AA5);
-        GemTiles.paint(g, x, y, size, fill);
-        if (!colorBlind || size < 6) return;
-        g.setColor(palette.textColor(fill));
-        int kind = value == VersusRules.ATTACK_CELL ? 8 : value - 1;
-        int m = Math.max(1, size / 5);
-        switch (kind) {
-            case 0 -> { for (int i = m; i < size - m; i += 3) g.drawLine(x + m, y + i, x + size - m, y + i); }
-            case 1 -> g.fillOval(x + size / 2 - 1, y + size / 2 - 1, 3, 3);
-            case 2 -> g.drawLine(x + m, y + size - m, x + size - m, y + m);
-            case 3 -> g.drawOval(x + m, y + m, size - m * 2, size - m * 2);
-            case 4 -> { for (int i = m; i < size - m; i += 3) g.drawLine(x + i, y + m, x + i, y + size - m); }
-            case 5 -> {
-                g.drawLine(x + m, y + size / 2, x + size - m, y + size / 2);
-                g.drawLine(x + size / 2, y + m, x + size / 2, y + size - m);
-            }
-            case 6 -> g.drawLine(x + m, y + m, x + size - m, y + size - m);
-            default -> g.drawRect(x + m, y + m, Math.max(1, size - m * 2), Math.max(1, size - m * 2));
         }
     }
 
