@@ -1937,7 +1937,8 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         g.fillRect(0, bottom - 28, VW, 28);
 
         if (snapshot.players().size() > 1) {
-            String ready = readyText(0, "계속 ✓", "보는 중") + "   ·   " + readyText(1, "계속 ✓", "보는 중");
+            // ✓·가운뎃점은 Do Hyeon에 없어 이 줄만 다른 글꼴로 그려졌다
+            String ready = readyText(0, "계속 완료", "보는 중") + "   " + EndingCredits.DOT + "   " + readyText(1, "계속 완료", "보는 중");
             g.setFont(GameTheme.fontFor(ready, 14, true));
             g.setColor(accent);
             UiKit.drawCentered(g, ready, VW / 2, VH - 148);
@@ -1947,7 +1948,7 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         paintChoice(g, creditsContinue, "계속하기", creditsHover != 1);
         paintChoice(g, creditsEnd, "끝내기", creditsHover == 1);
         long waitLeft = RaidRules.CREDITS_MIN_MILLIS - elapsed;
-        String hint = waitLeft > 0 ? "잠시 감상해 주세요 · " + (waitLeft + 999) / 1000 + "초 뒤 계속할 수 있습니다" : creditsHint;
+        String hint = waitLeft > 0 ? "잠시 감상해 주세요 " + EndingCredits.DOT + " " + (waitLeft + 999) / 1000 + "초 뒤 계속할 수 있습니다" : creditsHint;
         g.setFont(GameTheme.fontFor(hint, 13, false));
         g.setColor(DIM);
         UiKit.drawCentered(g, hint, VW / 2, VH - 58);
