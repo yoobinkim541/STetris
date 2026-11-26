@@ -70,7 +70,7 @@ public final class RaidScreenController implements AutoCloseable {
         Objects.requireNonNull(style, "style");
         this.skipAs = onlineViewer == null ? PlayerId.ONE : onlineViewer;
         this.viewer = onlineViewer;
-        panel.setGuide(onlineViewer != null ? onlineGuide() : guide(solo, soloKeys));
+        panel.setGuide(onlineViewer != null ? onlineGuide(soloKeys) : guide(solo, soloKeys));
         panel.setResultActions(this::goMenu, this::goRetry);
         panel.setConfirmAction(this::cancelConfirm);
         panel.setPauseActions(this::togglePause, this::beginQuit);
@@ -79,7 +79,7 @@ public final class RaidScreenController implements AutoCloseable {
         panel.setCreditsControls(creditsHint(solo, soloKeys, onlineViewer != null), () -> sendReady(skipAs), this::beginQuit);
         try {
             if (onlineViewer != null) {
-                battleRouter = new BattleInputRouter(root, BattleKeyMap.online(), this::onCommand, this::accepts);
+                battleRouter = new BattleInputRouter(root, BattleKeyMap.online(soloKeys), this::onCommand, this::accepts);
                 install(KeyEvent.VK_R, () -> {
                     if (!closed && !confirming && current != null && current.phase() == RaidPhase.PLAYING) {
                         client.ultimate(onlineViewer);
@@ -99,10 +99,17 @@ public final class RaidScreenController implements AutoCloseable {
         }
     }
 
-    /** 온라인. 이 PC의 키는 BattleKeyMap.online()이고 필살은 R. 호스트는 P1, 클라이언트는 P2 */
+    /** 온라인. 이 PC의 키는 솔로 기본 키이고 필살은 R. 호스트는 P1, 클라이언트는 P2 */
     public static RaidScreenController online(JRootPane root, RaidClient client, RaidPanel panel, PlayerId viewer,
                                               ControlStyle style, Runnable onMenu, Runnable onRetry) {
-        return new RaidScreenController(root, client, panel, new KeyMap(), false, style, onMenu, onRetry, viewer);
+        return online(root, client, panel, viewer, new KeyMap(), style, onMenu, onRetry);
+    }
+
+    /** 온라인. 이 PC의 키는 설정의 솔로 키({@code soloKeys})이고 필살은 R. 호스트는 P1, 클라이언트는 P2 */
+    public static RaidScreenController online(JRootPane root, RaidClient client, RaidPanel panel, PlayerId viewer,
+                                              KeyMap soloKeys, ControlStyle style, Runnable onMenu, Runnable onRetry) {
+        return new RaidScreenController(root, client, panel, Objects.requireNonNull(soloKeys, "soloKeys"), false,
+                style, onMenu, onRetry, viewer);
     }
 
     /** 테스트·결과 버튼이 그 참가자가 고르고 있는 카드를 본다 */
@@ -406,8 +413,8 @@ public final class RaidScreenController implements AutoCloseable {
                 + battle.sharedLine();
     }
 
-    private static String onlineGuide() {
-        return BattleKeyMap.online().guide() + "\nR 필살";
+    private static String onlineGuide(KeyMap soloKeys) {
+        return BattleKeyMap.online(soloKeys).guide() + "\nR 필살";
     }
 
     static String guide(boolean solo, KeyMap keys) {

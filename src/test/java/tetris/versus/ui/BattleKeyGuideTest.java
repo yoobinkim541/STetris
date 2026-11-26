@@ -10,6 +10,7 @@ import java.util.List;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import tetris.feature.setting.GameAction;
+import tetris.feature.setting.KeyMap;
 import tetris.feature.versus.api.BattleMode;
 import tetris.feature.versus.api.PlayerId;
 import tetris.ui.versus.BattleKeyMap;
@@ -31,11 +32,11 @@ class BattleKeyGuideTest {
         assertTrue(keys.assign(PlayerId.TWO, GameAction.ROTATE, KeyEvent.VK_Z));
         assertEquals("Z  회전", keys.playerLines(PlayerId.TWO).get(1));
         assertEquals("일시정지 P · 나가기 Esc", keys.sharedLine());
-        assertEquals("일시정지 P · 기권 Esc 두 번", BattleKeyMap.online().sharedLine());
+        assertEquals("일시정지 P · 기권 Q 두 번", BattleKeyMap.online().sharedLine());
         assertFalse(keys.guide().contains("Left"), "안내에 영어 방향키 이름을 쓰지 않는다");
     }
 
-    /** 로컬은 왼쪽 보드(P1)가 키보드 왼쪽 WASD, 오른쪽 보드(P2)가 방향키. P2P 내 키는 방향키 유지 (D-14 개정) */
+    /** 로컬은 왼쪽 보드(P1)가 키보드 왼쪽 WASD, 오른쪽 보드(P2)가 방향키. P2P 이동·회전·드롭도 솔로처럼 방향키·Space */
     @Test
     void localKeysFollowBoardSidesAndOnlineKeepsArrows() {
         var local = new BattleKeyMap();
@@ -50,6 +51,22 @@ class BattleKeyGuideTest {
             assertEquals(expected[i][1], BattleKeyMap.online().keyOf(PlayerId.ONE, actions[i]), "P2P " + actions[i]);
         }
         assertTrue(local.guide().startsWith("P1: 왼쪽 A"), local.guide());
+    }
+
+    /** P2P 내 키는 설정의 솔로 키를 그대로 따른다. 솔로에서 바꾼 키도 온라인에 같이 들어간다 */
+    @Test
+    void onlineKeysFollowTheSoloKeyMap() {
+        var solo = new KeyMap();
+        for (GameAction action : GameAction.values()) {
+            assertEquals(solo.keyOf(action), BattleKeyMap.online().keyOf(PlayerId.ONE, action), "기본 " + action);
+            assertFalse(BattleKeyMap.online().needsLocation(PlayerId.ONE, action), "왼쪽·오른쪽을 가리지 않는다");
+        }
+        assertEquals(KeyEvent.VK_Z, BattleKeyMap.online().keyOf(PlayerId.ONE, GameAction.ROTATE_CCW));
+        assertEquals(KeyEvent.VK_C, BattleKeyMap.online().keyOf(PlayerId.ONE, GameAction.HOLD));
+        assertEquals(KeyMap.AssignResult.OK, solo.assign(GameAction.HOLD, KeyEvent.VK_X));
+        var online = BattleKeyMap.online(solo);
+        assertEquals(KeyEvent.VK_X, online.keyOf(PlayerId.ONE, GameAction.HOLD));
+        assertTrue(online.isOnline());
     }
 
     @Test

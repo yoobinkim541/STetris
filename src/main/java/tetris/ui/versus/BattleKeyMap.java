@@ -33,29 +33,39 @@ public final class BattleKeyMap {
         public Target { Objects.requireNonNull(playerId); Objects.requireNonNull(action); }
     }
     private final Map<Target, Binding> keys = new LinkedHashMap<>();
-    public BattleKeyMap() { this(true); }
-    /** P2P: 이 PC의 참가자 한 명만 조작한다. 방향키와 오른쪽 Ctrl/Shift, 공통 P/Esc */
-    public static BattleKeyMap online() { return new BattleKeyMap(false); }
-    private BattleKeyMap(boolean twoPlayers) {
-        // 로컬: 왼쪽 보드(P1)는 WASD 쪽, 오른쪽 보드(P2)는 방향키. P2P는 방향키만
-        put(PlayerId.ONE, GameAction.MOVE_LEFT, twoPlayers ? KeyEvent.VK_A : KeyEvent.VK_LEFT);
-        put(PlayerId.ONE, GameAction.MOVE_RIGHT, twoPlayers ? KeyEvent.VK_D : KeyEvent.VK_RIGHT);
-        put(PlayerId.ONE, GameAction.SOFT_DROP, twoPlayers ? KeyEvent.VK_S : KeyEvent.VK_DOWN);
-        put(PlayerId.ONE, GameAction.ROTATE, twoPlayers ? KeyEvent.VK_W : KeyEvent.VK_UP);
-        put(PlayerId.ONE, GameAction.ROTATE_CCW, twoPlayers ? Binding.any(KeyEvent.VK_E) : Binding.right(KeyEvent.VK_CONTROL));
-        put(PlayerId.ONE, GameAction.HARD_DROP, twoPlayers ? KeyEvent.VK_F : KeyEvent.VK_SPACE);
-        put(PlayerId.ONE, GameAction.HOLD, twoPlayers ? Binding.any(KeyEvent.VK_G) : Binding.right(KeyEvent.VK_SHIFT));
-        if (twoPlayers) {
-            put(PlayerId.TWO, GameAction.MOVE_LEFT, KeyEvent.VK_LEFT);
-            put(PlayerId.TWO, GameAction.MOVE_RIGHT, KeyEvent.VK_RIGHT);
-            put(PlayerId.TWO, GameAction.SOFT_DROP, KeyEvent.VK_DOWN);
-            put(PlayerId.TWO, GameAction.ROTATE, KeyEvent.VK_UP);
-            put(PlayerId.TWO, GameAction.ROTATE_CCW, Binding.right(KeyEvent.VK_CONTROL));
-            put(PlayerId.TWO, GameAction.HARD_DROP, KeyEvent.VK_SPACE);
-            put(PlayerId.TWO, GameAction.HOLD, Binding.right(KeyEvent.VK_SHIFT));
-        }
+    /** 로컬 2인: 왼쪽 보드(P1)는 WASD 쪽, 오른쪽 보드(P2)는 방향키. 공통 P/Esc */
+    public BattleKeyMap() {
+        put(PlayerId.ONE, GameAction.MOVE_LEFT, KeyEvent.VK_A);
+        put(PlayerId.ONE, GameAction.MOVE_RIGHT, KeyEvent.VK_D);
+        put(PlayerId.ONE, GameAction.SOFT_DROP, KeyEvent.VK_S);
+        put(PlayerId.ONE, GameAction.ROTATE, KeyEvent.VK_W);
+        put(PlayerId.ONE, GameAction.ROTATE_CCW, KeyEvent.VK_E);
+        put(PlayerId.ONE, GameAction.HARD_DROP, KeyEvent.VK_F);
+        put(PlayerId.ONE, GameAction.HOLD, KeyEvent.VK_G);
+        put(PlayerId.TWO, GameAction.MOVE_LEFT, KeyEvent.VK_LEFT);
+        put(PlayerId.TWO, GameAction.MOVE_RIGHT, KeyEvent.VK_RIGHT);
+        put(PlayerId.TWO, GameAction.SOFT_DROP, KeyEvent.VK_DOWN);
+        put(PlayerId.TWO, GameAction.ROTATE, KeyEvent.VK_UP);
+        put(PlayerId.TWO, GameAction.ROTATE_CCW, Binding.right(KeyEvent.VK_CONTROL));
+        put(PlayerId.TWO, GameAction.HARD_DROP, KeyEvent.VK_SPACE);
+        put(PlayerId.TWO, GameAction.HOLD, Binding.right(KeyEvent.VK_SHIFT));
         keys.put(new Target(PlayerId.ONE, GameAction.PAUSE), Binding.any(KeyEvent.VK_P));
         keys.put(new Target(PlayerId.ONE, GameAction.QUIT), Binding.any(KeyEvent.VK_ESCAPE));
+    }
+
+    /** P2P: 이 PC의 참가자 한 명만 조작한다. 솔로 기본 키와 같다 */
+    public static BattleKeyMap online() { return online(new KeyMap()); }
+
+    /** P2P: 설정의 솔로 키를 그대로 쓴다. 솔로에서 키를 바꾸면 온라인에도 같이 적용된다 */
+    public static BattleKeyMap online(KeyMap solo) {
+        Objects.requireNonNull(solo, "solo");
+        return new BattleKeyMap(solo);
+    }
+
+    private BattleKeyMap(KeyMap solo) {
+        for (GameAction action : GameAction.values()) {
+            keys.put(new Target(PlayerId.ONE, action), Binding.any(solo.keyOf(action)));
+        }
     }
     private void put(PlayerId player, GameAction action, int code) {
         put(player, action, Binding.any(code));
