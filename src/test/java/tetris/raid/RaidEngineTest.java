@@ -192,6 +192,28 @@ class RaidEngineTest {
         assertFalse(hasGray(harness.engine.snapshot()));
     }
 
+    /** 온라인 협동: 한 사람만 R을 눌러도 팀 필살이 나간다. 게이지가 덜 찼거나 쓰러진 사람은 못 쓴다 */
+    @Test
+    void onlineCoopUltimateFiresFromEitherPlayerAlone() throws Exception {
+        Harness harness = Harness.coop(11, (boss, level, previous, before, random) -> PatternId.ROCK_THROW);
+        harness.ready();
+        int hp = harness.engine.snapshot().boss().hp();
+        setGauge(harness.engine, 99);
+        harness.engine.ultimateAlone(PlayerId.TWO);
+        assertEquals(hp, harness.engine.snapshot().boss().hp(), "게이지가 덜 찼으면 안 나간다");
+
+        setGauge(harness.engine, 100);
+        harness.engine.ultimateAlone(PlayerId.TWO);
+        assertEquals(hp - 150, harness.engine.snapshot().boss().hp(), "P2 혼자 눌러도 나간다");
+        assertEquals(0, harness.engine.snapshot().gauge());
+        assertNotNull(harness.event(RaidEvent.Type.ULTIMATE));
+
+        setGauge(harness.engine, 100);
+        harness.engine.ultimateAlone(PlayerId.ONE);
+        assertEquals(0, harness.engine.snapshot().gauge(), "P1 혼자 눌러도 나간다");
+        assertNotNull(harness.event(RaidEvent.Type.ULTIMATE));
+    }
+
     @Test
     void cardTimeoutPicksTheMiddleAndEachCardHasItsEffect() throws Exception {
         Harness harness = killOne(12);

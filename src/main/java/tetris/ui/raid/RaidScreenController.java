@@ -71,6 +71,8 @@ public final class RaidScreenController implements AutoCloseable {
         this.skipAs = onlineViewer == null ? PlayerId.ONE : onlineViewer;
         this.viewer = onlineViewer;
         panel.setGuide(onlineViewer != null ? onlineGuide(soloKeys) : guide(solo, soloKeys));
+        // 온라인 협동은 한 사람만 R을 눌러도 쓴다. 한 화면 협동은 두 사람이 R·Enter를 함께 누른다
+        panel.setUltimateKey(onlineViewer != null || solo ? "R" : "R+Enter");
         panel.setResultActions(this::goMenu, this::goRetry);
         panel.setConfirmAction(this::cancelConfirm);
         panel.setPauseActions(this::togglePause, this::beginQuit);
@@ -440,7 +442,7 @@ public final class RaidScreenController implements AutoCloseable {
     }
 
     private static String onlineGuide(KeyMap soloKeys) {
-        return BattleKeyMap.online(soloKeys).guide() + "\nR 필살";
+        return BattleKeyMap.online(soloKeys).guide() + "\nR 필살 (둘 중 한 사람만 눌러도 발동)";
     }
 
     static String guide(boolean solo, KeyMap keys) {

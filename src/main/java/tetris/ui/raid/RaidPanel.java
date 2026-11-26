@@ -95,6 +95,7 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
     private Rectangle retryButton = new Rectangle();
     private Rectangle resumeButton = new Rectangle();
     private Rectangle quitButton = new Rectangle();
+    private String ultimateKey = "";
     private Runnable onResume = () -> { };
     private Runnable onQuit = () -> { };
     /** 일시정지 상자에서 고른 버튼. 0 계속, 1 끝내기. 마우스 호버와 방향키가 같이 움직인다 */
@@ -218,6 +219,12 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
 
     public void setConfirmAction(Runnable cancel) {
         onCancelConfirm = cancel == null ? () -> setConfirm(false, false) : cancel;
+    }
+
+    /** 필살 게이지가 찼을 때 제목 옆에 보일 키. 비우면 키를 쓰지 않는다 */
+    public void setUltimateKey(String key) {
+        ultimateKey = key == null ? "" : key;
+        repaint();
     }
 
     /** 일시정지 상자의 계속·끝내기 버튼. 키와 같은 일을 한다 */
@@ -1354,7 +1361,7 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         g.setColor(new Color(border.getRed(), border.getGreen(), border.getBlue(), ready ? 225 : 140));
         g.drawRoundRect(box.x, box.y, box.width - 1, box.height - 1, 10, 10);
 
-        String title = ready ? "필살기 준비!" : "필살기 · 충전 중";
+        String title = ready ? (ultimateKey.isEmpty() ? "필살기 준비!" : "필살기 준비! " + ultimateKey) : "필살기 · 충전 중";
         String valText = clamped + "/100";
         if (box.height >= 44) {
             g.setFont(GameTheme.fontFor(title, 11, false));

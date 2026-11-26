@@ -80,7 +80,7 @@ public final class HostRaidClient implements RaidClient {
     @Override
     public void ultimate(PlayerId player) {
         if (closed || finished || player != PlayerId.ONE) return;
-        engine.ultimate(PlayerId.ONE);
+        engine.ultimateAlone(PlayerId.ONE); // 협동은 한 사람만 눌러도 쓴다
         tick();
     }
 
@@ -107,7 +107,7 @@ public final class HostRaidClient implements RaidClient {
         switch (input.kind()) {
             case COMMAND -> submit(input.command());
             case ULTIMATE -> {
-                engine.ultimate(PlayerId.TWO);
+                engine.ultimateAlone(PlayerId.TWO);
                 tick();
             }
             case PICK -> {
