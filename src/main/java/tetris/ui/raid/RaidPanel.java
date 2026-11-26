@@ -97,7 +97,8 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
     private Rectangle quitButton = new Rectangle();
     private Runnable onResume = () -> { };
     private Runnable onQuit = () -> { };
-    private int pauseHover = -1;
+    /** 일시정지 상자에서 고른 버튼. 0 계속, 1 끝내기. 마우스 호버와 방향키가 같이 움직인다 */
+    private int pauseSelected;
     private Rectangle creditsContinue = new Rectangle();
     private Rectangle creditsEnd = new Rectangle();
     private Runnable onCreditsContinue = () -> { };
@@ -150,6 +151,9 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         RaidSnapshot before = this.snapshot;
         RaidPhase previous = before == null ? null : before.phase();
         this.snapshot = snapshot;
+        if (snapshot != null && snapshot.phase() == RaidPhase.PAUSED && previous != RaidPhase.PAUSED) {
+            pauseSelected = 0; // 새로 멈출 때마다 계속부터
+        }
         if (snapshot != null && snapshot.phase() == RaidPhase.COUNTDOWN && previous != RaidPhase.COUNTDOWN) {
             countdownAnchor = System.currentTimeMillis();
         }
@@ -220,6 +224,22 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
     public void setPauseActions(Runnable resume, Runnable quit) {
         onResume = resume == null ? () -> { } : resume;
         onQuit = quit == null ? () -> { } : quit;
+    }
+
+    /** 일시정지 상자의 버튼을 방향키로 옮긴다 */
+    public void movePause(int delta) {
+        pauseSelected = Math.floorMod(pauseSelected + delta, 2);
+        repaint();
+    }
+
+    public int pauseSelection() {
+        return pauseSelected;
+    }
+
+    /** 고른 버튼을 누른다 (하드 드롭·Enter) */
+    public void activatePause() {
+        if (pauseSelected == 0) onResume.run();
+        else onQuit.run();
     }
 
     public void setResultLabels(String menu, String retry) {
@@ -367,8 +387,8 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         } else if (snapshot.phase() == RaidPhase.PAUSED) {
             int hit = resumeButton.contains(vx, vy) ? 0 : quitButton.contains(vx, vy) ? 1 : -1;
             hand = hit >= 0;
-            if (hit != pauseHover) {
-                pauseHover = hit;
+            if (hit >= 0 && hit != pauseSelected) {
+                pauseSelected = hit;
                 repaint();
             }
         }
@@ -2028,12 +2048,12 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         GameTheme.drawCentered(g, "일시정지", VW / 2, box.y + 60);
         g.setFont(GameTheme.text(15, false));
         g.setColor(DIM);
-        UiKit.drawCentered(g, "일시정지 키로 다시 시작합니다", VW / 2, box.y + 96);
-        UiKit.drawCentered(g, "나가기 키로 레이드를 끝낼 수 있습니다", VW / 2, box.y + 120);
+        UiKit.drawCentered(g, "방향키로 고르고 하드 드롭·Enter로 누릅니다", VW / 2, box.y + 96);
+        UiKit.drawCentered(g, "일시정지 키를 누르면 바로 다시 시작합니다", VW / 2, box.y + 120);
         resumeButton = new Rectangle(box.x + 28, box.y + 142, boxW / 2 - 40, 42);
         quitButton = new Rectangle(VW / 2 + 12, box.y + 142, boxW / 2 - 40, 42);
-        paintChoice(g, resumeButton, "계속", pauseHover != 1);
-        paintChoice(g, quitButton, "끝내기", pauseHover == 1);
+        paintChoice(g, resumeButton, "계속", pauseSelected == 0);
+        paintChoice(g, quitButton, "끝내기", pauseSelected == 1);
     }
 
     private void paintConfirm(Graphics2D g) {
@@ -2308,8 +2328,8 @@ public final class RaidPanel extends JPanel implements tetris.ui.input.ScreenVei
         lines.add("P2 ▶");
         lines.add("◀ 모두 ▶");
         lines.add("도망치기 전에 잡기");
-        lines.add("일시정지 키로 다시 시작합니다");
-        lines.add("나가기 키로 레이드를 끝낼 수 있습니다");
+        lines.add("방향키로 고르고 하드 드롭·Enter로 누릅니다");
+        lines.add("일시정지 키를 누르면 바로 다시 시작합니다");
         for (PatternId id : PatternId.values()) {
             lines.add(shown(id.displayName()));
             lines.add(shown(id.description()));

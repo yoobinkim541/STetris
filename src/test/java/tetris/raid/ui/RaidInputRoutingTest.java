@@ -66,6 +66,47 @@ class RaidInputRoutingTest {
         });
     }
 
+    /** 일시정지 상자: 두 사람 누구의 방향키·WASD로든 계속/끝내기를 옮기고, Enter·하드 드롭으로 누른다 */
+    @Test
+    void pauseBoxMovesWithEitherPlayersKeys() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane root = new JRootPane();
+            FakeRaidClient paused = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.PAUSED));
+            RaidPanel panel = new RaidPanel(false);
+            try (var ignored = new RaidScreenController(root, paused, panel, new KeyMap(), false, ControlStyle.MODERN,
+                    () -> { }, () -> { })) {
+                assertEquals(0, panel.pauseSelection(), "멈추면 계속부터");
+                key(root, KeyEvent.VK_RIGHT);
+                assertEquals(1, panel.pauseSelection(), "P2 방향키");
+                key(root, KeyEvent.VK_A);
+                assertEquals(0, panel.pauseSelection(), "P1 WASD");
+                key(root, KeyEvent.VK_DOWN);
+                assertEquals(1, panel.pauseSelection(), "아래 = 다음");
+                assertTrue(paused.sent().isEmpty(), "메뉴 키는 엔진으로 가지 않는다: " + paused.sent());
+                key(root, KeyEvent.VK_SPACE);
+                assertTrue((Boolean) field(panel, "confirming"), "끝내기를 누르면 종료 확인");
+            }
+
+            FakeRaidClient resume = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.PAUSED));
+            try (var ignored = new RaidScreenController(root, resume, new RaidPanel(false), new KeyMap(), false,
+                    ControlStyle.MODERN, () -> { }, () -> { })) {
+                key(root, KeyEvent.VK_ENTER);
+                assertTrue(resume.sent().stream().anyMatch(c -> c.action() == tetris.feature.setting.GameAction.PAUSE
+                        && c.pressed()), "계속은 일시정지를 푼다");
+            }
+
+            FakeRaidClient online = new FakeRaidClient(RaidSamples.phase(tetris.feature.raid.api.RaidMode.COOP, RaidPhase.PAUSED));
+            RaidPanel onlinePanel = new RaidPanel(false);
+            try (var ignored = RaidScreenController.online(root, online, onlinePanel, PlayerId.TWO,
+                    ControlStyle.MODERN, () -> { }, () -> { })) {
+                key(root, KeyEvent.VK_RIGHT);
+                assertEquals(1, onlinePanel.pauseSelection(), "온라인도 방향키로 옮긴다");
+                key(root, KeyEvent.VK_ENTER);
+                assertTrue((Boolean) field(onlinePanel, "confirming"));
+            }
+        });
+    }
+
     /** 한 화면 협동: 클릭은 P1, Enter는 P2 몫이라 한 사람이 같은 입력을 두 번 눌러 두 사람 몫을 채우지 못한다 */
     @Test
     void oneInputCannotActForBothPlayers() throws Exception {

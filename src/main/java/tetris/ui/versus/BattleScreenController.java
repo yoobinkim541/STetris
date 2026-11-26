@@ -28,6 +28,8 @@ public final class BattleScreenController implements AutoCloseable {
     private BattlePanel panel;
     private BattleKeyMap keys;
     private javax.swing.Timer forfeitTimeout;
+    private JRootPane root;
+    private final Object enterAction = new Object();
 
     public BattleScreenController(JRootPane root, BattleClient client, BattleKeyMap keys,
             BattlePanel panel, Consumer<MatchSnapshot> onResult, BooleanSupplier confirmQuit, Runnable onExit) {
@@ -93,8 +95,10 @@ public final class BattleScreenController implements AutoCloseable {
             this.onResult = Objects.requireNonNull(onResult);
             this.confirmQuit = Objects.requireNonNull(confirmQuit);
             this.onExit = Objects.requireNonNull(onExit);
-            Objects.requireNonNull(panel);
+            this.panel = Objects.requireNonNull(panel);
+            this.root = root;
             router = new BattleInputRouter(root, keys, this::send, this::accepts);
+            installEnter();
             installed = router;
             var subscribed = client.subscribe(snapshot -> {
                 if (closed) return;
@@ -124,7 +128,46 @@ public final class BattleScreenController implements AutoCloseable {
 
     private boolean accepts(GameAction action) {
         if (closed || confirming || current == null || current.phase() == MatchPhase.FINISHED) return false;
+        if (current.phase() == MatchPhase.PAUSED && isMenuKey(action)) return true;
         return BattleKeyMap.isShared(action) || current.phase() == MatchPhase.PLAYING;
+    }
+
+    /** 일시정지 상자에서 방향키 역할을 하는 키. 좌우 이동·회전(위)·소프트 드롭(아래)과 고르기(하드 드롭) */
+    private static boolean isMenuKey(GameAction action) {
+        return action == GameAction.MOVE_LEFT || action == GameAction.MOVE_RIGHT || action == GameAction.ROTATE
+                || action == GameAction.SOFT_DROP || action == GameAction.HARD_DROP;
+    }
+
+    /** 일시정지 상자: 두 사람 누구의 키로든 버튼을 옮기고, 하드 드롭으로 누른다. 엔진에는 보내지 않는다 */
+    private void pauseMenu(GameAction action) {
+        if (action == GameAction.HARD_DROP) {
+            GameSounds.SHARED.menuSelect();
+            panel.activatePause();
+            return;
+        }
+        GameSounds.SHARED.menuMove();
+        panel.movePause(action == GameAction.MOVE_LEFT || action == GameAction.ROTATE ? -1 : 1);
+    }
+
+    /** Enter: 일시정지 상자의 고른 버튼. 대전 키에는 Enter가 없다 */
+    private void installEnter() {
+        javax.swing.KeyStroke stroke = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0, false);
+        root.getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW).put(stroke, enterAction);
+        root.getActionMap().put(enterAction, new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                if (closed || confirming || current == null || current.phase() != MatchPhase.PAUSED) return;
+                GameSounds.SHARED.menuSelect();
+                panel.activatePause();
+            }
+        });
+    }
+
+    private void uninstallEnter() {
+        if (root == null) return;
+        javax.swing.KeyStroke stroke = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0, false);
+        var map = root.getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW);
+        if (map.get(stroke) == enterAction) map.remove(stroke);
+        root.getActionMap().remove(enterAction);
     }
 
     private void dispatch(PlayerCommand command) {
@@ -133,6 +176,10 @@ public final class BattleScreenController implements AutoCloseable {
 
     private void send(PlayerCommand command) {
         if (closed) return;
+        if (current != null && current.phase() == MatchPhase.PAUSED && isMenuKey(command.action())) {
+            if (command.pressed()) pauseMenu(command.action());
+            return;
+        }
         if (!command.pressed()) { dispatch(command); return; }
         if (online) {
             if (command.action() == GameAction.QUIT) { onlineQuit(); return; }
@@ -190,6 +237,7 @@ public final class BattleScreenController implements AutoCloseable {
     @Override public void close() {
         if (closed) return;
         router.close();
+        uninstallEnter();
         closed = true;
         if (forfeitTimeout != null) forfeitTimeout.stop();
         if (subscription != null) subscription.close();
