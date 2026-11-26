@@ -592,6 +592,30 @@ class RaidEngineTest {
         lucky.setBoolean(fighter, true);
     }
 
+    /** 기둥·덩어리 소환이 이미 채운 줄과 함께 한 번에 5줄 이상 지워도 Lock 정산이 끝나고 다음 블록이 나온다 */
+    @Test
+    void clearingMoreThanFourRowsAtOnceKeepsTheRaidRunning() throws Exception {
+        Harness harness = Harness.coop(41, (boss, level, previous, before, random) -> PatternId.SEAL_PREVIEW);
+        harness.ready();
+        GameSession session = session(harness.engine, 0);
+        for (int row = 15; row < 20; row++) {
+            for (int col = 0; col < 10; col++) {
+                if (row <= 16 && (col == 4 || col == 5)) continue; // O 블록이 들어갈 자리. 17~19행은 이미 꽉 찼다
+                session.writeFixedCell(row, col, VersusRules.ATTACK_CELL);
+            }
+        }
+        int hp = harness.engine.snapshot().boss().hp();
+        harness.drop(0);
+        harness.now += 150;
+        harness.engine.advance(harness.now); // CLEARING 150ms 뒤 5줄 정산
+        for (int i = 0; i < 100; i++) harness.pump(); // 예전에는 여기서 매 tick NullPointerException
+
+        assertEquals(GameSession.class, session.getClass());
+        assertNotNull(session.snapshot().currentBlock());
+        assertTrue(harness.engine.snapshot().boss().hp() < hp);
+        assertEquals(5, session.snapshot().lines());
+    }
+
     private static GameSession session(RaidEngine engine, int player) throws Exception {
         Field field = RaidEngine.class.getDeclaredField("sessions");
         field.setAccessible(true);

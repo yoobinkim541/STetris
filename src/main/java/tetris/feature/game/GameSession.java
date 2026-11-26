@@ -44,6 +44,7 @@ public class GameSession {
     private static final int MODERN_PREVIEW_COUNT = 3;   // NXT-2
     private static final int CLEAR_ANIMATION_MILLIS = 150; // ANI-1
     private static final int CELL_CLEAR_SCORE = 10;        // 아이템이 지운 고정 칸당 점수 (ITB-4)
+    private static final int MAX_SCORED_LINES = 4;         // 줄 점수·Level 정책이 한 번에 받는 최대 줄 수
 
     private final Board board = new Board();
     private final BlockGenerator generator;
@@ -764,7 +765,9 @@ public class GameSession {
 
     /** L5: 줄 삭제 점수 + 아이템이 지운 고정 칸당 10점 (§8.6) */
     private void awardClearScore(ClearPlan plan, int clearedCells) {
-        score += scoringPolicy.lineClearBonus(plan.rowCount()) * modifiers.scoreMultiplier();
+        // 레이드 기둥·덩어리 소환이 미리 채운 줄이 있으면 한 번에 5줄 이상 지울 수 있다. 줄 점수는 4줄(테트리스)이 최대다
+        int scored = Math.min(plan.rowCount(), MAX_SCORED_LINES);
+        score += scoringPolicy.lineClearBonus(scored) * modifiers.scoreMultiplier();
         score += (long) clearedCells * CELL_CLEAR_SCORE;
     }
 
@@ -772,7 +775,13 @@ public class GameSession {
     private void updateCounters(ClearPlan plan) {
         int previousMilestone = lines / 10;
         lines += plan.rowCount();
-        levelPolicy.onLinesCleared(plan.rowCount());
+        // LevelPolicy는 한 번에 4줄까지 받는다. 그보다 많으면 나눠 넘겨 누적 줄 수를 잃지 않는다
+        int left = plan.rowCount();
+        do {
+            int chunk = Math.min(left, MAX_SCORED_LINES);
+            levelPolicy.onLinesCleared(chunk);
+            left -= chunk;
+        } while (left > 0);
         // L7: 현재 Next는 유지하고, 곧 채워질 새 Next 한 개에만 예약한다.
         if (mode == GameMode.ITEM && lines / 10 > previousMilestone) {
             ((ItemBlockGenerator) generator).requestItem();
