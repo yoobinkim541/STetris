@@ -25,7 +25,7 @@ class BattleKeyGuideTest {
         assertEquals("↓", BattleKeyMap.keyLabel(KeyEvent.VK_DOWN));
         assertEquals(KeyEvent.getKeyText(KeyEvent.VK_SPACE), BattleKeyMap.keyLabel(KeyEvent.VK_SPACE));
         var keys = new BattleKeyMap();
-        assertEquals(List.of("← →  이동", "↑  회전", "오른쪽 Ctrl  반시계", "↓  내리기",
+        assertEquals(List.of("← →  이동", "↑  회전", "/  반시계", "↓  내리기",
                 KeyEvent.getKeyText(KeyEvent.VK_SPACE) + "  즉시 낙하", "오른쪽 Shift  홀드"),
                 keys.playerLines(PlayerId.TWO));
         assertEquals("A D  이동", keys.playerLines(PlayerId.ONE).getFirst());

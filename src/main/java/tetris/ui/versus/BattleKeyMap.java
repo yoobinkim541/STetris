@@ -46,7 +46,7 @@ public final class BattleKeyMap {
         put(PlayerId.TWO, GameAction.MOVE_RIGHT, KeyEvent.VK_RIGHT);
         put(PlayerId.TWO, GameAction.SOFT_DROP, KeyEvent.VK_DOWN);
         put(PlayerId.TWO, GameAction.ROTATE, KeyEvent.VK_UP);
-        put(PlayerId.TWO, GameAction.ROTATE_CCW, Binding.right(KeyEvent.VK_CONTROL));
+        put(PlayerId.TWO, GameAction.ROTATE_CCW, KeyEvent.VK_SLASH); // 노트북에는 오른쪽 Ctrl이 없는 경우가 많다
         put(PlayerId.TWO, GameAction.HARD_DROP, KeyEvent.VK_SPACE);
         put(PlayerId.TWO, GameAction.HOLD, Binding.right(KeyEvent.VK_SHIFT));
         keys.put(new Target(PlayerId.ONE, GameAction.PAUSE), Binding.any(KeyEvent.VK_P));
@@ -80,7 +80,7 @@ public final class BattleKeyMap {
     public boolean isOnline() { return keys.keySet().stream().noneMatch(t -> t.playerId() == PlayerId.TWO); }
     public int keyOf(PlayerId player, GameAction action) { return binding(player, action).code(); }
     public Binding binding(PlayerId player, GameAction action) { return keys.get(target(player, action)); }
-    /** 오른쪽 Ctrl/Shift처럼 위치가 정해진 키인지 */
+    /** 오른쪽 Shift처럼 위치가 정해진 키인지 */
     public boolean needsLocation(PlayerId player, GameAction action) {
         return binding(player, action).location() != KeyEvent.KEY_LOCATION_UNKNOWN;
     }
@@ -133,7 +133,7 @@ public final class BattleKeyMap {
         return keyLabel(binding(player, action));
     }
 
-    /** 화면에 쓸 키 이름. 방향키는 화살표로, 오른쪽 Ctrl/Shift는 위치를 붙인다 */
+    /** 화면에 쓸 키 이름. 방향키는 화살표로, 오른쪽 Shift처럼 위치가 정해진 키는 위치를 붙인다 */
     public static String keyLabel(int code) {
         return keyLabel(Binding.any(code));
     }
@@ -145,6 +145,7 @@ public final class BattleKeyMap {
             case KeyEvent.VK_UP -> "↑";
             case KeyEvent.VK_DOWN -> "↓";
             case KeyEvent.VK_ESCAPE -> "Esc";
+            case KeyEvent.VK_SLASH -> "/";
             default -> KeyEvent.getKeyText(binding.code());
         };
         if (binding.location() == KeyEvent.KEY_LOCATION_RIGHT) return "오른쪽 " + name;

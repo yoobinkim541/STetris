@@ -122,7 +122,7 @@ public final class BattleInputRouter implements AutoCloseable {
         root.putClientProperty(OWNER,null);
     }
 
-    /** 오른쪽 Ctrl/Shift처럼 키 위치가 필요한 입력. 테스트도 이 메서드로 KeyEvent를 넣는다 */
+    /** 오른쪽 Shift처럼 키 위치가 필요한 입력. 테스트도 이 메서드로 KeyEvent를 넣는다 */
     public boolean dispatchLocated(KeyEvent event) {
         if (closed || keyMap == null || event == null) return false;
         if (event.getID() != KeyEvent.KEY_PRESSED && event.getID() != KeyEvent.KEY_RELEASED) return false;
