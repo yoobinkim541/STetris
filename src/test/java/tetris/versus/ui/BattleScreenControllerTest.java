@@ -51,6 +51,35 @@ class BattleScreenControllerTest {
             controller.close();
         });
     }
+    /** 일시정지 상자: 두 사람 누구의 방향키·WASD로든 계속/나가기를 옮기고, Enter·하드 드롭으로 누른다 */
+    @Test void pauseBoxMovesWithEitherPlayersKeys() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            var root = new JRootPane(); var client = new LocalBattleClient(MatchConfig.of(BattleMode.CLASSIC));
+            var state = new java.util.concurrent.atomic.AtomicReference<MatchSnapshot>(); client.subscribe(state::set);
+            var panel = new BattlePanel(false);
+            var asked = new AtomicInteger();
+            var controller = new BattleScreenController(root, client, new BattleKeyMap(), panel, s -> {},
+                () -> { asked.incrementAndGet(); return false; }, () -> {});
+            panel.setPauseActions(controller::togglePause, controller::quit);
+            try {
+                key(root, KeyEvent.VK_P, false); key(root, KeyEvent.VK_P, true);
+                assertEquals(MatchPhase.PAUSED, state.get().phase());
+                assertEquals(0, panel.pauseSelection(), "멈추면 계속부터");
+                key(root, KeyEvent.VK_RIGHT, false);
+                assertEquals(1, panel.pauseSelection(), "P2 방향키");
+                key(root, KeyEvent.VK_A, false);
+                assertEquals(0, panel.pauseSelection(), "P1 WASD");
+                assertEquals(MatchPhase.PAUSED, state.get().phase(), "메뉴 키는 블록을 움직이지 않는다");
+                key(root, KeyEvent.VK_D, false);
+                key(root, KeyEvent.VK_SPACE, false);
+                assertEquals(1, asked.get(), "나가기를 누르면 기권 확인");
+                key(root, KeyEvent.VK_W, false);
+                assertEquals(0, panel.pauseSelection(), "위 = 이전");
+                key(root, KeyEvent.VK_ENTER, false);
+                assertEquals(MatchPhase.PLAYING, state.get().phase(), "계속(Enter)은 다시 시작한다");
+            } finally { controller.close(); }
+        });
+    }
     private void key(JRootPane root, int code, boolean release) {
         Object name = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
             .get(KeyStroke.getKeyStroke(code, 0, release));

@@ -42,9 +42,16 @@ public final class ForfeitChooser {
             setPreferredSize(new Dimension(440, 220));
             setFocusable(true);
             setBackground(new Color(0x070B18));
-            KeyBindingManager.bindKey(this, KeyEvent.VK_LEFT, () -> move(-1));
-            KeyBindingManager.bindKey(this, KeyEvent.VK_RIGHT, () -> move(1));
-            KeyBindingManager.bindKey(this, KeyEvent.VK_ENTER, this::activate);
+            // 두 사람 모두 자기 키로 고른다: P2 방향키·Space, P1 WASD·F
+            for (int key : new int[] {KeyEvent.VK_LEFT, KeyEvent.VK_UP, KeyEvent.VK_A, KeyEvent.VK_W}) {
+                KeyBindingManager.bindKey(this, key, () -> move(-1));
+            }
+            for (int key : new int[] {KeyEvent.VK_RIGHT, KeyEvent.VK_DOWN, KeyEvent.VK_D, KeyEvent.VK_S}) {
+                KeyBindingManager.bindKey(this, key, () -> move(1));
+            }
+            for (int key : new int[] {KeyEvent.VK_ENTER, KeyEvent.VK_SPACE, KeyEvent.VK_F}) {
+                KeyBindingManager.bindKey(this, key, this::activate);
+            }
             KeyBindingManager.bindKey(this, KeyEvent.VK_ESCAPE, this::cancel);
             addMouseMotionListener(new MouseAdapter() {
                 @Override public void mouseMoved(MouseEvent e) { hover(e.getX(), e.getY()); }
