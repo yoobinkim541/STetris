@@ -193,6 +193,23 @@ public final class RaidEngine {
         if (phase != RaidPhase.FINISHED) bump();
     }
 
+    /**
+     * 온라인 협동: 둘 중 한 사람만 눌러도 팀 필살을 쓴다. 두 PC가 1.5초 안에 함께 누르기는 어렵다.
+     * 협동이 아니면 {@link #ultimate(PlayerId)}와 같다
+     */
+    public void ultimateAlone(PlayerId player) {
+        if (config.mode() != RaidMode.COOP) {
+            ultimate(player);
+            return;
+        }
+        if (closed || phase != RaidPhase.PLAYING || gauge < RaidRules.GAUGE_MAX) return;
+        int i = index(player);
+        if (i < 0 || i >= count || !fighters[i].alive) return;
+        for (Fighter fighter : fighters) fighter.ultimateAt = playClock;
+        tryFireUltimate();
+        if (phase != RaidPhase.FINISHED) bump();
+    }
+
     public void pickCard(PlayerId player, int cardIndex) {
         if (closed) return;
         if (!applyPick(index(player), cardIndex)) return;

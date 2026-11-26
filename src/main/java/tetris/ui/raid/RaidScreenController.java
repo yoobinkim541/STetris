@@ -71,6 +71,8 @@ public final class RaidScreenController implements AutoCloseable {
         this.skipAs = onlineViewer == null ? PlayerId.ONE : onlineViewer;
         this.viewer = onlineViewer;
         panel.setGuide(onlineViewer != null ? onlineGuide(soloKeys) : guide(solo, soloKeys));
+        // 온라인 협동은 한 사람만 R을 눌러도 쓴다. 한 화면 협동은 두 사람이 R·Enter를 함께 누른다
+        panel.setUltimateKey(onlineViewer != null || solo ? "R" : "R+Enter");
         panel.setResultActions(this::goMenu, this::goRetry);
         panel.setConfirmAction(this::cancelConfirm);
         panel.setPauseActions(this::togglePause, this::beginQuit);
@@ -87,10 +89,8 @@ public final class RaidScreenController implements AutoCloseable {
                 });
             } else if (solo) soloRouter = new SoloInputRouter(root, soloKeys, this::onCommand, this::accepts);
             else battleRouter = new BattleInputRouter(root, new BattleKeyMap(), this::onCommand, this::accepts);
-            if (onlineViewer == null) {
-                install(KeyEvent.VK_R, this::onUltimateP1);
-                install(KeyEvent.VK_ENTER, this::onEnter);
-            }
+            if (onlineViewer == null) install(KeyEvent.VK_R, this::onUltimateP1);
+            install(KeyEvent.VK_ENTER, this::onEnter); // 메뉴 상자 고르기. 솔로 키에는 Enter를 배정할 수 없다
             subscription = client.subscribe(this::onSnapshot);
         } catch (RuntimeException | Error failure) {
             close();
@@ -166,9 +166,9 @@ public final class RaidScreenController implements AutoCloseable {
 
     private boolean accepts(GameAction action) {
         if (closed || current == null || current.phase() == RaidPhase.FINISHED) return false;
-        if (confirming) {
-            return action == GameAction.MOVE_LEFT || action == GameAction.MOVE_RIGHT
-                    || action == GameAction.QUIT || action == GameAction.HARD_DROP;
+        if (confirming || current.phase() == RaidPhase.PAUSED) {
+            return isMenuKey(action) || action == GameAction.QUIT
+                    || (action == GameAction.PAUSE && !confirming);
         }
         if (current.phase() == RaidPhase.CARD_PICK) {
             return action == GameAction.MOVE_LEFT || action == GameAction.MOVE_RIGHT
@@ -193,6 +193,10 @@ public final class RaidScreenController implements AutoCloseable {
         }
         if (current.phase() == RaidPhase.CARD_PICK) {
             handleCard(command);
+            return;
+        }
+        if (current.phase() == RaidPhase.PAUSED && isMenuKey(command.action())) {
+            handlePauseMenu(command);
             return;
         }
         client.send(new PlayerCommand(command.playerId(), command.action(), command.pressed(), sequence++));
@@ -249,10 +253,28 @@ public final class RaidScreenController implements AutoCloseable {
         return cursors;
     }
 
+    /** 일시정지 상자: 두 사람 누구의 이동·회전·소프트 드롭 키로든 버튼을 옮기고, 하드 드롭으로 누른다 */
+    private void handlePauseMenu(PlayerCommand command) {
+        if (!command.pressed()) return;
+        if (command.action() == GameAction.HARD_DROP) {
+            GameSounds.SHARED.menuSelect();
+            panel.activatePause();
+            return;
+        }
+        GameSounds.SHARED.menuMove();
+        panel.movePause(command.action() == GameAction.MOVE_LEFT || command.action() == GameAction.ROTATE ? -1 : 1);
+    }
+
+    /** 메뉴 상자에서 방향키 역할을 하는 키. 좌우 이동·회전(위)·소프트 드롭(아래)과 고르기(하드 드롭) */
+    private static boolean isMenuKey(GameAction action) {
+        return action == GameAction.MOVE_LEFT || action == GameAction.MOVE_RIGHT || action == GameAction.ROTATE
+                || action == GameAction.SOFT_DROP || action == GameAction.HARD_DROP;
+    }
+
     private void handleConfirm(PlayerCommand command) {
         if (!command.pressed()) return;
         switch (command.action()) {
-            case MOVE_LEFT, MOVE_RIGHT -> {
+            case MOVE_LEFT, MOVE_RIGHT, ROTATE, SOFT_DROP -> {
                 confirmYes = !confirmYes;
                 panel.setConfirm(true, confirmYes);
             }
@@ -274,16 +296,22 @@ public final class RaidScreenController implements AutoCloseable {
             activateConfirm();
             return;
         }
+        if (current != null && current.phase() == RaidPhase.PAUSED) {
+            GameSounds.SHARED.menuSelect();
+            panel.activatePause();
+            return;
+        }
         if (current != null && current.phase() == RaidPhase.FINISHED) {
             GameSounds.SHARED.menuSelect();
             panel.activateResult();
             return;
         }
         if (current != null && (current.phase() == RaidPhase.BOSS_INTRO || current.phase() == RaidPhase.CREDITS)) {
-            sendReady(solo ? PlayerId.ONE : PlayerId.TWO); // 한 화면 협동에서 Enter는 P2 키다
+            // 한 화면 협동에서 Enter는 P2 키다. 온라인은 이 PC의 참가자
+            sendReady(viewer != null ? viewer : solo ? PlayerId.ONE : PlayerId.TWO);
             return;
         }
-        if (!solo && current != null && current.phase() == RaidPhase.PLAYING) client.ultimate(PlayerId.TWO);
+        if (!solo && viewer == null && current != null && current.phase() == RaidPhase.PLAYING) client.ultimate(PlayerId.TWO);
     }
 
     /**
@@ -414,7 +442,7 @@ public final class RaidScreenController implements AutoCloseable {
     }
 
     private static String onlineGuide(KeyMap soloKeys) {
-        return BattleKeyMap.online(soloKeys).guide() + "\nR 필살";
+        return BattleKeyMap.online(soloKeys).guide() + "\nR 필살 (둘 중 한 사람만 눌러도 발동)";
     }
 
     static String guide(boolean solo, KeyMap keys) {

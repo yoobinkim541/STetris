@@ -192,6 +192,28 @@ class RaidEngineTest {
         assertFalse(hasGray(harness.engine.snapshot()));
     }
 
+    /** 온라인 협동: 한 사람만 R을 눌러도 팀 필살이 나간다. 게이지가 덜 찼거나 쓰러진 사람은 못 쓴다 */
+    @Test
+    void onlineCoopUltimateFiresFromEitherPlayerAlone() throws Exception {
+        Harness harness = Harness.coop(11, (boss, level, previous, before, random) -> PatternId.ROCK_THROW);
+        harness.ready();
+        int hp = harness.engine.snapshot().boss().hp();
+        setGauge(harness.engine, 99);
+        harness.engine.ultimateAlone(PlayerId.TWO);
+        assertEquals(hp, harness.engine.snapshot().boss().hp(), "게이지가 덜 찼으면 안 나간다");
+
+        setGauge(harness.engine, 100);
+        harness.engine.ultimateAlone(PlayerId.TWO);
+        assertEquals(hp - 150, harness.engine.snapshot().boss().hp(), "P2 혼자 눌러도 나간다");
+        assertEquals(0, harness.engine.snapshot().gauge());
+        assertNotNull(harness.event(RaidEvent.Type.ULTIMATE));
+
+        setGauge(harness.engine, 100);
+        harness.engine.ultimateAlone(PlayerId.ONE);
+        assertEquals(0, harness.engine.snapshot().gauge(), "P1 혼자 눌러도 나간다");
+        assertNotNull(harness.event(RaidEvent.Type.ULTIMATE));
+    }
+
     @Test
     void cardTimeoutPicksTheMiddleAndEachCardHasItsEffect() throws Exception {
         Harness harness = killOne(12);
@@ -590,6 +612,30 @@ class RaidEngineTest {
         Field lucky = fighter.getClass().getDeclaredField("luckyFalling");
         lucky.setAccessible(true);
         lucky.setBoolean(fighter, true);
+    }
+
+    /** 기둥·덩어리 소환이 이미 채운 줄과 함께 한 번에 5줄 이상 지워도 Lock 정산이 끝나고 다음 블록이 나온다 */
+    @Test
+    void clearingMoreThanFourRowsAtOnceKeepsTheRaidRunning() throws Exception {
+        Harness harness = Harness.coop(41, (boss, level, previous, before, random) -> PatternId.SEAL_PREVIEW);
+        harness.ready();
+        GameSession session = session(harness.engine, 0);
+        for (int row = 15; row < 20; row++) {
+            for (int col = 0; col < 10; col++) {
+                if (row <= 16 && (col == 4 || col == 5)) continue; // O 블록이 들어갈 자리. 17~19행은 이미 꽉 찼다
+                session.writeFixedCell(row, col, VersusRules.ATTACK_CELL);
+            }
+        }
+        int hp = harness.engine.snapshot().boss().hp();
+        harness.drop(0);
+        harness.now += 150;
+        harness.engine.advance(harness.now); // CLEARING 150ms 뒤 5줄 정산
+        for (int i = 0; i < 100; i++) harness.pump(); // 예전에는 여기서 매 tick NullPointerException
+
+        assertEquals(GameSession.class, session.getClass());
+        assertNotNull(session.snapshot().currentBlock());
+        assertTrue(harness.engine.snapshot().boss().hp() < hp);
+        assertEquals(5, session.snapshot().lines());
     }
 
     private static GameSession session(RaidEngine engine, int player) throws Exception {

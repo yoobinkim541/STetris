@@ -69,7 +69,8 @@ public final class BattlePanel extends JPanel implements tetris.ui.input.ScreenV
     private int filledTwo = -1;
     private Runnable onResume = () -> { };
     private Runnable onQuit = () -> { };
-    private int pauseHover = -1;
+    /** 일시정지 상자에서 고른 버튼. 0 계속, 1 나가기. 마우스 호버와 방향키가 같이 움직인다 */
+    private int pauseSelected;
     public String modeLabel() { return modeLabel; }
     /** 보드 옆에 각자의 키를 크게 그린다 (S12-B1). 없으면 화면 아래 한 줄 안내만 쓴다 */
     public void setKeys(BattleKeyMap keys) { this.keys = Objects.requireNonNull(keys); repaint(); }
@@ -105,6 +106,9 @@ public final class BattlePanel extends JPanel implements tetris.ui.input.ScreenV
             else if (two > filledTwo) comboTwo = 0;
             filledOne = one;
             filledTwo = two;
+        }
+        if (next.phase() == MatchPhase.PAUSED && (this.snapshot == null || this.snapshot.phase() != MatchPhase.PAUSED)) {
+            pauseSelected = 0; // 새로 멈출 때마다 계속부터
         }
         this.snapshot = next;
         if (next.phase() == MatchPhase.COUNTDOWN && seenPhase != MatchPhase.COUNTDOWN) fx.armCountdown();
@@ -311,8 +315,8 @@ public final class BattlePanel extends JPanel implements tetris.ui.input.ScreenV
             g.setColor(new Color(8, 12, 28, 246));
             g.fillRoundRect(250 + 8, 236 + 8, 460 - 16, 222 - 16, 16, 16);
             tetris.ui.theme.UiKit.paintFrame(g, tetris.ui.theme.UiKit.Tone.VIOLET, 250, 236, 460, 222);
-            paintPauseButton(g, RESUME_BUTTON, "계속", pauseHover != 1);
-            paintPauseButton(g, QUIT_BUTTON, "나가기", pauseHover == 1);
+            paintPauseButton(g, RESUME_BUTTON, "계속", pauseSelected == 0);
+            paintPauseButton(g, QUIT_BUTTON, "나가기", pauseSelected == 1);
         }
         g.setColor(Color.WHITE);
         g.setFont(tetris.ui.theme.GameTheme.display(36));
@@ -335,7 +339,7 @@ public final class BattlePanel extends JPanel implements tetris.ui.input.ScreenV
             tetris.ui.theme.UiKit.drawInBox(g, hint, new java.awt.Rectangle(40, 364, 880, 28), tetris.ui.theme.UiKit.Align.CENTER);
         }
         if (snapshot.phase() == MatchPhase.PAUSED) {
-            String hint = "일시정지 키를 누르면 두 보드가 함께 다시 시작합니다";
+            String hint = "방향키로 고르고 하드 드롭·Enter로 누릅니다 · 일시정지 키는 바로 다시 시작";
             g.setFont(tetris.ui.theme.GameTheme.text(16, false));
             tetris.ui.theme.UiKit.drawInBox(g, hint, new java.awt.Rectangle(40, 364, 880, 28), tetris.ui.theme.UiKit.Align.CENTER);
         }
@@ -359,6 +363,22 @@ public final class BattlePanel extends JPanel implements tetris.ui.input.ScreenV
         onQuit = quit == null ? () -> { } : quit;
     }
 
+    /** 일시정지 상자의 버튼을 방향키로 옮긴다 */
+    public void movePause(int delta) {
+        pauseSelected = Math.floorMod(pauseSelected + delta, 2);
+        repaint();
+    }
+
+    public int pauseSelection() {
+        return pauseSelected;
+    }
+
+    /** 고른 버튼을 누른다 (하드 드롭·Enter) */
+    public void activatePause() {
+        if (pauseSelected == 0) onResume.run();
+        else onQuit.run();
+    }
+
     /** 화면 좌표의 클릭. 일시정지 중이면 버튼을 누른다 */
     void click(int x, int y) {
         int hit = pauseHit(x, y);
@@ -369,8 +389,8 @@ public final class BattlePanel extends JPanel implements tetris.ui.input.ScreenV
     private void hoverPause(int x, int y) {
         int hit = pauseHit(x, y);
         setCursor(hit >= 0 ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
-        if (hit != pauseHover) {
-            pauseHover = hit;
+        if (hit >= 0 && hit != pauseSelected) {
+            pauseSelected = hit;
             repaint();
         }
     }

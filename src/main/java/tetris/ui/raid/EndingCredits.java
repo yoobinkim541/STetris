@@ -5,9 +5,12 @@ import java.util.List;
 /**
  * 레이드에서 보스 4종을 처음 모두 물리치면 올라가는 엔딩 크레딧 내용.
  * 사람별 역할은 저장소 커밋 기록(작성자별로 고친 영역과 커밋 제목)으로 정리했다.
- * 그림·소리·글꼴 출처는 CREDITS.md, fonts/CREDITS.txt와 같다.
+ * 그림ㆍ소리ㆍ글꼴 출처는 CREDITS.md, fonts/CREDITS.txt와 같다.
  */
 final class EndingCredits {
+    /** Do Hyeon에는 가운뎃점(U+00B7)이 없어 그 줄만 시스템 글꼴로 바뀌었다. 크레딧은 한글 아래아(ㆍ)로 쓴다 */
+    static final String DOT = "ㆍ";
+
     enum Kind { TITLE, SUBTITLE, SECTION, NAME, TEXT, GAP }
 
     record Line(Kind kind, String text) {
@@ -19,10 +22,10 @@ final class EndingCredits {
             gap(),
             line(Kind.SECTION, "만든 사람들"),
             line(Kind.NAME, "Yoobin Kim"),
-            line(Kind.TEXT, "요구사항·설계 명세, 게임 보드와 줄 삭제 처리"),
-            line(Kind.TEXT, "로컬·온라인 대전 화면, 입력, 결과"),
+            line(Kind.TEXT, "요구사항ㆍ설계 명세, 게임 보드와 줄 삭제 처리"),
+            line(Kind.TEXT, "로컬ㆍ온라인 대전 화면, 입력, 결과"),
             line(Kind.TEXT, "보스 레이드 엔진과 화면, 보스 추첨, 보상 카드"),
-            line(Kind.TEXT, "크리스털 테마, 효과음·배경음, 전체 화면·마우스"),
+            line(Kind.TEXT, "크리스털 테마, 효과음ㆍ배경음, 전체 화면ㆍ마우스"),
             line(Kind.TEXT, "요구사항 감사, CI, 릴리스"),
             gap(),
             line(Kind.NAME, "IAmNew"),
@@ -33,22 +36,22 @@ final class EndingCredits {
             line(Kind.TEXT, "난이도별 블록 생성기, 아이템과 지속 효과 표시"),
             gap(),
             line(Kind.NAME, "simsgood2"),
-            line(Kind.TEXT, "블록 구조와 첫 화면들(메뉴·게임·일시정지·스코어보드)"),
+            line(Kind.TEXT, "블록 구조와 첫 화면들(메뉴ㆍ게임ㆍ일시정지ㆍ스코어보드)"),
             line(Kind.TEXT, "대전 계약: 모드, 스냅샷, 공격 줄, 10줄 대기열"),
             line(Kind.TEXT, "SRS 회전, T-스핀, Lock Delay, 7-bag 생성기"),
             line(Kind.TEXT, "난이도 설정 저장"),
             gap(),
             line(Kind.SECTION, "그림"),
-            line(Kind.TEXT, "보스·카드·배경·아이콘: gpt-image-2(Codex CLI)로 생성"),
+            line(Kind.TEXT, "보스ㆍ카드ㆍ배경ㆍ아이콘: gpt-image-2(Codex CLI)로 생성"),
             gap(),
             line(Kind.SECTION, "소리"),
-            line(Kind.TEXT, "효과음·배경음: 팀 스크립트로 직접 합성"),
+            line(Kind.TEXT, "효과음ㆍ배경음: 팀 스크립트로 직접 합성"),
             gap(),
             line(Kind.SECTION, "글꼴"),
-            line(Kind.TEXT, "Black Han Sans · Do Hyeon · Orbitron (SIL OFL 1.1)"),
+            line(Kind.TEXT, "Black Han Sans ㆍ Do Hyeon ㆍ Orbitron (SIL OFL 1.1)"),
             gap(),
             line(Kind.SECTION, "만든 도구"),
-            line(Kind.TEXT, "Java 21 · Swing · Gradle · Jackson · JUnit 5"),
+            line(Kind.TEXT, "Java 21 ㆍ Swing ㆍ Gradle ㆍ Jackson ㆍ JUnit 5"),
             gap(),
             gap(),
             line(Kind.SUBTITLE, "플레이해 주셔서 감사합니다"));
