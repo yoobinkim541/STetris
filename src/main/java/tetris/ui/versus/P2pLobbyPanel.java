@@ -80,7 +80,11 @@ public final class P2pLobbyPanel extends JPanel {
     private Page page = Page.INTERNET;
     private String selectedId = "tab-net";
     private String editing;
-    private String createName = "대전";
+    private String createName = "테트리스 한 판";
+    /** 대기실 위에 보일 방 제목. 호스트는 자기가 지은 제목, 목록에서 들어온 손님은 그 방 제목 */
+    private String roomTitle = "";
+    /** 방 코드 복사. 테스트는 시스템 클립보드 대신 바꿔 끼운다 */
+    private java.util.function.Consumer<String> clipboard = P2pLobbyPanel::copyToSystemClipboard;
     private boolean createPublic = true;
     private int createModeIndex;
     private String codePromptFor;
@@ -186,6 +190,8 @@ public final class P2pLobbyPanel extends JPanel {
     }
 
     public String createName() { return createName; }
+    /** 대기실 위에 보이는 방 제목. 비어 있으면 "인터넷 방"·"같은 LAN"으로 보인다 */
+    public String roomTitle() { return roomTitle; }
     public boolean createPublic() { return createPublic; }
     public RelayRoomMode listedMode() { return RelayRoomMode.values()[Math.floorMod(createModeIndex, RelayRoomMode.values().length)]; }
     public String selectedId() { return selectedId; }
@@ -207,6 +213,30 @@ public final class P2pLobbyPanel extends JPanel {
     }
 
     public void setInternetRoom(String code) { internetRoom = code; }
+
+    /** 대기실의 코드 복사 버튼·C 키. 친구에게 붙여 넣어 알려 줄 수 있게 방 코드를 클립보드에 넣는다 */
+    public void copyRoomCode() {
+        if (internetRoom == null || internetRoom.isBlank()) return;
+        try {
+            clipboard.accept(internetRoom);
+            status = "방 코드 " + internetRoom + "를 복사했습니다. 친구에게 붙여 넣어 알려 주세요.";
+            error = false;
+        } catch (RuntimeException failed) {
+            status = "클립보드에 복사하지 못했습니다. 코드를 직접 알려 주세요: " + internetRoom;
+            error = true;
+        }
+        repaint();
+    }
+
+    /** 테스트용. 시스템 클립보드 대신 받을 곳 */
+    public void setClipboard(java.util.function.Consumer<String> target) {
+        clipboard = Objects.requireNonNull(target, "target");
+    }
+
+    private static void copyToSystemClipboard(String text) {
+        java.awt.datatransfer.StringSelection selection = new java.awt.datatransfer.StringSelection(text);
+        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, selection);
+    }
 
     public void setRecentPeers(List<String> peers) {
         Objects.requireNonNull(peers);
@@ -341,6 +371,7 @@ public final class P2pLobbyPanel extends JPanel {
             case KeyEvent.VK_ENTER -> activateSelected();
             case KeyEvent.VK_ESCAPE -> escape();
             case KeyEvent.VK_N -> newRoom();
+            case KeyEvent.VK_C -> { if (page == Page.WAITING) copyRoomCode(); }
             case KeyEvent.VK_R -> { if (page == Page.INTERNET) actions.refreshRooms(); }
             default -> { }
         }
@@ -398,7 +429,11 @@ public final class P2pLobbyPanel extends JPanel {
             case "btn-refresh" -> actions.refreshRooms();
             case "btn-back", "btn-lan-back", "btn-leave" -> actions.cancelOrBack();
             case "btn-cancel", "btn-cancel-code" -> { page = Page.INTERNET; selectedId = "tab-net"; }
-            case "btn-make" -> hostInternetButton.doClick();
+            case "btn-make" -> {
+                roomTitle = createName;
+                hostInternetButton.doClick();
+            }
+            case "btn-copy" -> copyRoomCode();
             case "btn-host" -> hostButton.doClick();
             case "btn-connect" -> connectButton.doClick();
             case "btn-ready" -> readyButton.doClick();
@@ -418,6 +453,7 @@ public final class P2pLobbyPanel extends JPanel {
     private void joinRow(int index) {
         if (index < 0 || index >= rooms.size()) return;
         InternetRelay.ListedRoom room = rooms.get(index);
+        roomTitle = room.name();
         if (room.privateRoom()) openCode(room.name());
         else actions.joinPublic(room.routeIndex(), room.id());
     }
@@ -434,6 +470,7 @@ public final class P2pLobbyPanel extends JPanel {
     }
 
     private void openCode(String roomName) {
+        roomTitle = roomName == null ? "" : roomName;
         page = Page.CODE;
         codePromptFor = roomName;
         selectedId = "field-code";
@@ -540,13 +577,13 @@ public final class P2pLobbyPanel extends JPanel {
         return new View(page, rows, selectedId, createName, createPublic, shownMode,
                 codeField.getText(), portField.getText(), addressField.getText(), recent, recentBox.isEnabled(),
                 status.isEmpty() ? hintFor(page) : status, error, internetRoom,
-                createName, peer, ready, modeBox.isEnabled(), readyButton.getText(), backButton.getText());
+                roomTitle, peer, ready, modeBox.isEnabled(), readyButton.getText(), backButton.getText());
     }
 
     private static String hintFor(Page page) {
         return switch (page) {
             case INTERNET -> "방을 고르거나 새로 만드세요.";
-            case CREATE -> "이름을 적고, 공개와 모드를 고른 뒤 만드세요.";
+            case CREATE -> "방 제목을 적고(Enter), 공개와 모드를 고른 뒤 만드세요.";
             case CODE -> "호스트가 알려 준 방 코드를 입력하세요.";
             case LAN -> "포트와 상대 IP를 입력하세요.";
             case WAITING -> "준비가 되면 게임 시작을 누르세요.";

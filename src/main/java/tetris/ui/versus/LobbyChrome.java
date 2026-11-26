@@ -98,9 +98,9 @@ public final class LobbyChrome {
         String guide = switch (view.page()) {
             case INTERNET -> "위아래 선택   Enter 참가   N 새 방   R 새로고침   Esc 뒤로";
             case LAN -> "위아래 선택   Enter 입력   좌우 탭   Esc 뒤로";
-            case CREATE -> "위아래 이동   좌우 공개와 모드   Enter 확인   Esc 취소";
+            case CREATE -> "위아래 이동   Enter 방 제목 입력·확인   좌우 공개와 모드   Esc 취소";
             case CODE -> "Enter 참가   Esc 목록";
-            case WAITING -> "Enter 준비   Esc 나가기";
+            case WAITING -> view.roomCode() == null ? "Enter 준비   Esc 나가기" : "Enter 준비   C 코드 복사   Esc 나가기";
         };
         return new Scene(List.copyOf(hits), frame.glass, guide, frame.statusBar, frame.guideBar);
     }
@@ -217,7 +217,8 @@ public final class LobbyChrome {
         int y = glass.y + cap;
         g.setFont(GameTheme.text(Math.max(17, unit), true));
         g.setColor(Color.WHITE);
-        UiKit.drawInBox(g, view.roomTitle() == null || view.roomTitle().isEmpty() ? "인터넷 방" : view.roomTitle(),
+        String fallback = view.roomCode() == null ? "같은 LAN" : "인터넷 방";
+        UiKit.drawInBox(g, view.roomTitle() == null || view.roomTitle().isEmpty() ? fallback : view.roomTitle(),
                 new Rectangle(glass.x + cap, y, innerW, unit + 6), UiKit.Align.CENTER);
         y += unit + 12;
         int codeH = unit + 20;
@@ -309,12 +310,15 @@ public final class LobbyChrome {
     }
 
     private static void addWaiting(List<Hit> hits, View view, Rectangle glass, int buttonsY, int buttonH, int unit) {
+        // 인터넷 방이면 친구에게 알려 줄 코드를 바로 복사할 수 있게 가운데에 복사 버튼을 둔다
+        List<String> buttons = view.roomCode() == null ? List.of("btn-ready", "btn-leave")
+                : List.of("btn-ready", "btn-copy", "btn-leave");
         if (view.hostCanEditMode()) {
             hits.add(new Hit("wait-mode", field(glass, glass.y + glass.height - unit * 3, unit + 12),
                     null, "btn-ready", null, null, false));
-            addButtonRow(hits, List.of("btn-ready", "btn-leave"), "wait-mode", glass.x, buttonsY, glass.width, buttonH, unit);
+            addButtonRow(hits, buttons, "wait-mode", glass.x, buttonsY, glass.width, buttonH, unit);
         } else {
-            addButtonRow(hits, List.of("btn-ready", "btn-leave"), null, glass.x, buttonsY, glass.width, buttonH, unit);
+            addButtonRow(hits, buttons, null, glass.x, buttonsY, glass.width, buttonH, unit);
         }
     }
 
@@ -395,7 +399,17 @@ public final class LobbyChrome {
         g.setColor(Color.WHITE);
         String value = fieldText(hit.id(), view);
         Rectangle hole = new Rectangle(box.x + 18, box.y + 3, Math.max(24, box.width - 36), Math.max(12, box.height - 6));
-        if (hit.id().equals("vis") || hit.id().equals("mode") || hit.id().equals("recent") || hit.id().equals("wait-mode")) {
+        if (hit.id().equals("field-name")) {
+            // 방 제목은 고칠 수 있는 칸이라는 것을 보이게 왼쪽에 이름표를 단다
+            int labelW = Math.max(56, hole.width / 4);
+            g.setFont(GameTheme.text(Math.max(12, unit - 4), false));
+            g.setColor(new Color(0x9BB0CE));
+            UiKit.drawInBox(g, "방 제목", new Rectangle(hole.x, hole.y, labelW, hole.height), UiKit.Align.LEFT);
+            g.setFont(GameTheme.text(Math.max(14, unit - 1), false));
+            g.setColor(value.isEmpty() ? new Color(0x9BB0CE) : Color.WHITE);
+            UiKit.drawInBox(g, value.isEmpty() ? placeholder(hit.id()) : value,
+                    new Rectangle(hole.x + labelW, hole.y, Math.max(1, hole.width - labelW * 2), hole.height), UiKit.Align.CENTER);
+        } else if (hit.id().equals("vis") || hit.id().equals("mode") || hit.id().equals("recent") || hit.id().equals("wait-mode")) {
             UiKit.drawInBox(g, "◀", new Rectangle(hole.x, hole.y, 24, hole.height), UiKit.Align.CENTER);
             UiKit.drawInBox(g, value, new Rectangle(hole.x + 26, hole.y, Math.max(1, hole.width - 52), hole.height), UiKit.Align.CENTER);
             UiKit.drawInBox(g, "▶", new Rectangle(hole.x + hole.width - 24, hole.y, 24, hole.height), UiKit.Align.CENTER);
@@ -434,6 +448,7 @@ public final class LobbyChrome {
             case "btn-connect" -> "접속";
             case "btn-ready" -> view.readyLabel();
             case "btn-leave" -> view.backLabel();
+            case "btn-copy" -> "코드 복사";
             default -> "";
         };
     }
@@ -453,7 +468,7 @@ public final class LobbyChrome {
 
     private static String placeholder(String id) {
         return switch (id) {
-            case "field-name" -> "방 이름";
+            case "field-name" -> "Enter로 입력";
             case "field-code" -> "방 코드";
             case "field-port" -> "포트";
             case "field-address" -> "상대 IP";
