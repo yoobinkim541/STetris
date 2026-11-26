@@ -106,11 +106,11 @@ class BattleScreenControllerTest {
             var controller = BattleScreenController.online(root, client, BattleKeyMap.online(), panel,
                 s -> results.incrementAndGet());
             try {
-                key(root, KeyEvent.VK_ESCAPE, false); key(root, KeyEvent.VK_ESCAPE, true);
+                key(root, KeyEvent.VK_Q, false); key(root, KeyEvent.VK_Q, true);
                 assertEquals(MatchPhase.PLAYING, state.get().phase(), "the first Q neither pauses nor forfeits");
                 assertFalse(panel.notice().isEmpty(), "the first Q explains how to confirm");
                 assertEquals(0, results.get());
-                key(root, KeyEvent.VK_ESCAPE, false);
+                key(root, KeyEvent.VK_Q, false);
                 assertEquals(MatchPhase.FINISHED, state.get().phase());
                 assertEquals(MatchResult.win(PlayerId.TWO, MatchResult.EndReason.FORFEIT), state.get().result());
                 assertEquals(1, results.get());
@@ -124,10 +124,10 @@ class BattleScreenControllerTest {
             var panel = new BattlePanel(false);
             var controller = BattleScreenController.online(root, client, BattleKeyMap.online(), panel, s -> { });
             try {
-                key(root, KeyEvent.VK_ESCAPE, false); key(root, KeyEvent.VK_ESCAPE, true);
+                key(root, KeyEvent.VK_Q, false); key(root, KeyEvent.VK_Q, true);
                 key(root, KeyEvent.VK_LEFT, false); key(root, KeyEvent.VK_LEFT, true);
                 assertTrue(panel.notice().isEmpty());
-                key(root, KeyEvent.VK_ESCAPE, false);
+                key(root, KeyEvent.VK_Q, false);
                 assertEquals(MatchPhase.PLAYING, state.get().phase(), "a Q after another key starts over");
             } finally { controller.close(); }
         });

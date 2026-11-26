@@ -717,7 +717,7 @@ public class MainFrame extends JFrame {
 
     /** 이 화면은 자기 참가자 한 명만 조작한다. 결과는 호스트가 정한 것을 양쪽이 같이 본다 (R3-LIVE, R3-LOSS) */
     private void startOnlineBattle(BattleClient client, MatchConfig config, LobbySnapshot.Role role) {
-        var keys = BattleKeyMap.online();
+        var keys = BattleKeyMap.online(settings.getKeyMap());
         String label = BattleModes.label(config.mode()) + " · P2P "
                 + (role == LobbySnapshot.Role.HOST ? "(나: P1 왼쪽)" : "(나: P2 오른쪽)");
         PlayerId viewer = role == LobbySnapshot.Role.HOST ? PlayerId.ONE : PlayerId.TWO;
@@ -960,7 +960,7 @@ public class MainFrame extends JFrame {
         showScreen(Screen.RAID);
         long generation = raidGeneration;
         raidController = RaidScreenController.online(getRootPane(), client, panel, viewer,
-                config.controlStyle(),
+                settings.getKeyMap(), config.controlStyle(),
                 () -> { if (generation == raidGeneration) backToP2pLobby(); },
                 () -> { if (generation == raidGeneration) rematchP2p(); });
     }

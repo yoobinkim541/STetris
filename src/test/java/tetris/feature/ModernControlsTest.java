@@ -198,23 +198,28 @@ public class ModernControlsTest {
     }
 
     @Test
-    void 오른쪽_Ctrl만_반시계이고_왼쪽_Ctrl은_아니다() {
+    void P2_반시계는_슬래시이고_홀드는_오른쪽_Shift만이다() {
         BattleKeyMap keys = new BattleKeyMap();
         BattleKeyMap.Binding ccw = keys.binding(PlayerId.TWO, GameAction.ROTATE_CCW);
-        assertEquals(KeyEvent.VK_CONTROL, ccw.code());
-        assertEquals(KeyEvent.KEY_LOCATION_RIGHT, ccw.location());
-        assertTrue(BattleKeyMap.matches(ccw, key(new JPanel(), KeyEvent.VK_CONTROL, KeyEvent.KEY_LOCATION_RIGHT)));
-        assertFalse(BattleKeyMap.matches(ccw, key(new JPanel(), KeyEvent.VK_CONTROL, KeyEvent.KEY_LOCATION_LEFT)));
+        assertEquals(KeyEvent.VK_SLASH, ccw.code(), "노트북에 없는 오른쪽 Ctrl 대신 /");
+        assertFalse(keys.needsLocation(PlayerId.TWO, GameAction.ROTATE_CCW));
+        assertEquals("/", BattleKeyMap.keyLabel(ccw));
+        assertTrue(keys.located().values().stream().noneMatch(b -> b.code() == KeyEvent.VK_CONTROL),
+                "로컬 2인 키에 Ctrl이 남아 있지 않다");
+
+        BattleKeyMap.Binding hold = keys.binding(PlayerId.TWO, GameAction.HOLD);
+        assertTrue(BattleKeyMap.matches(hold, key(new JPanel(), KeyEvent.VK_SHIFT, KeyEvent.KEY_LOCATION_RIGHT)));
+        assertFalse(BattleKeyMap.matches(hold, key(new JPanel(), KeyEvent.VK_SHIFT, KeyEvent.KEY_LOCATION_LEFT)));
 
         javax.swing.JRootPane root = new javax.swing.JRootPane();
         List<tetris.feature.versus.api.PlayerCommand> commands = new ArrayList<>();
         try (BattleInputRouter router = new BattleInputRouter(root, keys, commands::add, action -> true)) {
-            assertTrue(router.dispatchLocated(key(root, KeyEvent.VK_CONTROL, KeyEvent.KEY_LOCATION_RIGHT)));
-            assertFalse(router.dispatchLocated(key(root, KeyEvent.VK_CONTROL, KeyEvent.KEY_LOCATION_LEFT)));
+            assertTrue(router.dispatchLocated(key(root, KeyEvent.VK_SHIFT, KeyEvent.KEY_LOCATION_RIGHT)));
+            assertFalse(router.dispatchLocated(key(root, KeyEvent.VK_SHIFT, KeyEvent.KEY_LOCATION_LEFT)));
         }
         assertEquals(2, commands.size());
         assertEquals(PlayerId.TWO, commands.get(0).playerId());
-        assertEquals(GameAction.ROTATE_CCW, commands.get(0).action());
+        assertEquals(GameAction.HOLD, commands.get(0).action());
         assertTrue(commands.get(0).pressed());
     }
 
